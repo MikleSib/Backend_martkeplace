@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 
-@router.post("/profile")
+@router.post("/user/profile")
 async def create_profile(profile_data: ProfileCreate, db: AsyncSession = Depends(get_db)):
     existing_profile = await get_user_profile(db, profile_data.user_id)
     if existing_profile:
@@ -25,7 +25,7 @@ async def create_profile(profile_data: ProfileCreate, db: AsyncSession = Depends
     )
     return profile
 
-@router.get("/profile/{user_id}")
+@router.get("/user/profile/{user_id}")
 async def get_profile(user_id: int, db: AsyncSession = Depends(get_db)):
     profile = await get_user_profile(db, user_id)
     if not profile:

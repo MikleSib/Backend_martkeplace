@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "redis-service"
+version = "0.1.0"
+description = ""
+authors = ["Mikhail Trofimov"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.110.0"
+uvicorn = "^0.29.0"
+redis = "^5.0.0"
+pydantic = "^2.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
