@@ -126,8 +126,17 @@ services:
     volumes:
       - redis_data:/data
     
+
+  file_service:
+    build:
+      context: ./backend/services/file_service
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./uploads:/app/uploads
 volumes:
   db_user_data:
   db_auth_data:
   db_post_data:
   redis_data:
+  file_service_data:

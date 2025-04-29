@@ -21,17 +21,23 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{USER_SERVICE_URL}/profile",
+                    f"{USER_SERVICE_URL}/user/profile",
                     json={
                         "user_id": user.id,
-                        "full_name": "Mikhail Trofimov",
-                        "phone": "+79999999999",
-                        "about_me": f"Новый пользователь {user_data.username}",
-                        "location": "Novosibirsk"
+                        "username": user_data.username,
+                        "full_name": user_data.full_name,
+                        "about_me": user_data.about_me
                     }
                 )
-                response.raise_for_status()
+                if response.status_code != 200:
+                    await db.delete(user)
+                    await db.commit()
+                    raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Failed to create user profile"))
             except httpx.HTTPError as e:
+                await db.delete(user)
+                await db.commit()
+                if isinstance(e, HTTPException):
+                    raise e
                 raise HTTPException(status_code=500, detail="Failed to create user profile")
 
     return {"id": user.id, "username": user.username, "email": user.email}
@@ -40,7 +46,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_username(db, user_data.username)
     if not user or user.password != user_data.password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
     access_token = create_access_token({"sub": user.username, "email": user.email, "id": user.id})
     refresh_token = create_refresh_token({"sub": user.username, "email": user.email, "id": user.id})
     return {"access_token": access_token, "refresh_token": refresh_token}

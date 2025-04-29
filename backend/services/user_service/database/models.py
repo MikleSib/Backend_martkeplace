@@ -8,7 +8,6 @@ class UserProfile(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, unique=True, index=True)  
+    username = Column(String, unique=True, index=True)
     full_name = Column(String)
-    phone = Column(String)
     about_me = Column(Text, nullable=True)
-    location = Column(String, nullable=True)
