@@ -2,29 +2,22 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-class UserRegister(BaseModel):
-    username: str
-    password: str
-    email: str
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-
-
-class PostCreate(BaseModel):
+class PostBase(BaseModel):
     title: str
     content: str
+
+class PostCreate(PostBase):
+    author_id: int
 
 class PostUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
 
-class PostResponse(BaseModel):
+class PostResponse(PostBase):
     id: int
-    title: str
-    content: str
     author_id: int
     created_at: datetime
-    updated_at: datetime 
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

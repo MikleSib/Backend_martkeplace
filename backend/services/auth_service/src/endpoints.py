@@ -54,8 +54,8 @@ async def refresh(refresh_token: str = Depends(oauth2_scheme)):
     return {"access_token": access_token}
 
 @router.get("/auth/check_token")
-async def check_token(token: str = Depends(oauth2_scheme)):
+async def check_token(token: str):
     payload = verify_access_token(token)
     if not payload:
         return False   
-    return True
+    return {"user_id": payload["id"]}
