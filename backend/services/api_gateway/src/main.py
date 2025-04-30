@@ -219,6 +219,33 @@ async def get_post(post_id: int):
     cached_post = get_from_cache(cache_key)
     if cached_post:
         logger.info(f"Post {post_id} found in cache")
+        if "author" not in cached_post and "author_id" in cached_post:
+            try:
+                author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{cached_post['author_id']}")
+                if author_response.status_code == 200:
+                    cached_post['author'] = author_response.json()
+                else:
+                    cached_post['author'] = {
+                        "id": cached_post['author_id'],
+                        "username": "[Удаленный пользователь]",
+                        "full_name": "[Удаленный пользователь]",
+                        "about_me": None
+                    }
+            except Exception as e:
+                logger.error(f"Error fetching author for post {post_id}: {str(e)}")
+                cached_post['author'] = {
+                    "id": cached_post['author_id'],
+                    "username": "[Удаленный пользователь]",
+                    "full_name": "[Удаленный пользователь]",
+                    "about_me": None
+                }
+        
+        if "images" in cached_post:
+            for image in cached_post["images"]:
+                if "image_url" in image and image["image_url"].startswith("/files/"):
+                    image["original_url"] = image["image_url"]
+                    image["image_url"] = f"http://147.45.161.95:8000{image['image_url']}"
+        
         return cached_post
 
     try:
@@ -227,6 +254,34 @@ async def get_post(post_id: int):
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting post"))
         
         post_data = response.json()
+        
+        if "author" not in post_data and "author_id" in post_data:
+            try:
+                author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post_data['author_id']}")
+                if author_response.status_code == 200:
+                    post_data['author'] = author_response.json()
+                else:
+                    post_data['author'] = {
+                        "id": post_data['author_id'],
+                        "username": "[Удаленный пользователь]",
+                        "full_name": "[Удаленный пользователь]",
+                        "about_me": None
+                    }
+            except Exception as e:
+                logger.error(f"Error fetching author for post {post_id}: {str(e)}")
+                post_data['author'] = {
+                    "id": post_data['author_id'],
+                    "username": "[Удаленный пользователь]",
+                    "full_name": "[Удаленный пользователь]",
+                    "about_me": None
+                }
+        
+        if "images" in post_data:
+            for image in post_data["images"]:
+                if "image_url" in image and image["image_url"].startswith("/files/"):
+                    image["original_url"] = image["image_url"]
+                    image["image_url"] = f"http://147.45.161.95:8000{image['image_url']}"
+        
         set_to_cache(cache_key, post_data)
         logger.info(f"Post {post_id} saved to cache")
         
