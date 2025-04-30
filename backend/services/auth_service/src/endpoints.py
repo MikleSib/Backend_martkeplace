@@ -5,7 +5,7 @@ from database import get_db
 from database import get_user_by_username, create_user
 from config import UserRegister, UserLogin
 from jwt import create_access_token, create_refresh_token, verify_access_token
-from utils import verify_password
+from .utils import verify_password
 import httpx
 
 router = APIRouter()
