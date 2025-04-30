@@ -54,6 +54,9 @@ def get_from_cache(key):
     return None
 
 def set_to_cache(key, value, expire=300):
+    # Если это пост и в нем есть комментарии, устанавливаем меньшее время жизни кеша
+    if key.startswith("post_") and value and "comments" in value and value["comments"]:
+        expire = 10
     requests.post(f"{REDIS_SERVICE_URL}/set", json={"key": key, "value": value, "expire": expire})
 
 def check_route_enabled(route: str) -> bool:
@@ -219,6 +222,7 @@ async def get_post(post_id: int):
     cached_post = get_from_cache(cache_key)
     if cached_post:
         logger.info(f"Post {post_id} found in cache")
+        # Добавляем информацию об авторе, если её нет в кешированных данных
         if "author" not in cached_post and "author_id" in cached_post:
             try:
                 author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{cached_post['author_id']}")
@@ -240,6 +244,54 @@ async def get_post(post_id: int):
                     "about_me": None
                 }
         
+        # Добавляем информацию о пользователях для лайков
+        if 'likes' in cached_post and cached_post['likes']:
+            for like in cached_post['likes']:
+                if 'user_id' in like and not 'user' in like:
+                    try:
+                        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{like['user_id']}")
+                        if user_response.status_code == 200:
+                            like['user'] = user_response.json()
+                        else:
+                            like['user'] = {
+                                "id": like['user_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
+                    except Exception as e:
+                        logger.error(f"Error fetching user for like: {str(e)}")
+                        like['user'] = {
+                            "id": like['user_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+        
+        # Добавляем информацию об авторах для комментариев
+        if 'comments' in cached_post and cached_post['comments']:
+            for comment in cached_post['comments']:
+                if 'author_id' in comment and not 'author' in comment:
+                    try:
+                        author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
+                        if author_response.status_code == 200:
+                            comment['author'] = author_response.json()
+                        else:
+                            comment['author'] = {
+                                "id": comment['author_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
+                    except Exception as e:
+                        logger.error(f"Error fetching author for comment: {str(e)}")
+                        comment['author'] = {
+                            "id": comment['author_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+                    
         return cached_post
 
     try:
@@ -249,6 +301,7 @@ async def get_post(post_id: int):
         
         post_data = response.json()
         
+        # Добавляем информацию об авторе
         if "author" not in post_data and "author_id" in post_data:
             try:
                 author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post_data['author_id']}")
@@ -270,6 +323,54 @@ async def get_post(post_id: int):
                     "about_me": None
                 }
         
+        # Добавляем информацию о пользователях для лайков
+        if 'likes' in post_data and post_data['likes']:
+            for like in post_data['likes']:
+                if 'user_id' in like and not 'user' in like:
+                    try:
+                        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{like['user_id']}")
+                        if user_response.status_code == 200:
+                            like['user'] = user_response.json()
+                        else:
+                            like['user'] = {
+                                "id": like['user_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
+                    except Exception as e:
+                        logger.error(f"Error fetching user for like: {str(e)}")
+                        like['user'] = {
+                            "id": like['user_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+        
+        # Добавляем информацию об авторах для комментариев
+        if 'comments' in post_data and post_data['comments']:
+            for comment in post_data['comments']:
+                if 'author_id' in comment and not 'author' in comment:
+                    try:
+                        author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
+                        if author_response.status_code == 200:
+                            comment['author'] = author_response.json()
+                        else:
+                            comment['author'] = {
+                                "id": comment['author_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
+                    except Exception as e:
+                        logger.error(f"Error fetching author for comment: {str(e)}")
+                        comment['author'] = {
+                            "id": comment['author_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+        
         set_to_cache(cache_key, post_data)
         logger.info(f"Post {post_id} saved to cache")
         
@@ -286,23 +387,87 @@ async def get_all_posts(skip: int = 0, limit: int = 100):
     try:
         response = requests.get(f"{POST_SERVICE_URL}/posts?skip={skip}&limit={limit}")
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting posts"))
+            error_detail = response.json().get("detail", "Error getting posts")
+            logger.error(f"Error from post service: {error_detail}")
+            raise HTTPException(status_code=response.status_code, detail=error_detail)
             
         posts = response.json()
         
         for post in posts:
-            author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post['author_id']}")
-            if author_response.status_code == 200:
-                post['author'] = author_response.json()
-            else:
-                post['author'] = {
-                    "id": post['author_id'],
-                    "username": "[Удаленный пользователь]",
-                    "full_name": "[Удаленный пользователь]",
-                    "about_me": None
-                }
+            # Добавляем информацию об авторе
+            if "author" not in post and "author_id" in post:
+                try:
+                    author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post['author_id']}")
+                    if author_response.status_code == 200:
+                        post['author'] = author_response.json()
+                    else:
+                        logger.warning(f"Could not get author data for user ID {post['author_id']}")
+                        post['author'] = {
+                            "id": post['author_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+                except Exception as e:
+                    logger.error(f"Error fetching author for post {post.get('id')}: {str(e)}")
+                    post['author'] = {
+                        "id": post['author_id'],
+                        "username": "[Удаленный пользователь]",
+                        "full_name": "[Удаленный пользователь]",
+                        "about_me": None
+                    }
+            
+            # Добавляем информацию о пользователях для лайков
+            if 'likes' in post and post['likes']:
+                for like in post['likes']:
+                    if 'user_id' in like and not 'user' in like:
+                        try:
+                            user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{like['user_id']}")
+                            if user_response.status_code == 200:
+                                like['user'] = user_response.json()
+                            else:
+                                like['user'] = {
+                                    "id": like['user_id'],
+                                    "username": "[Удаленный пользователь]",
+                                    "full_name": "[Удаленный пользователь]",
+                                    "about_me": None
+                                }
+                        except Exception as e:
+                            logger.error(f"Error fetching user for like: {str(e)}")
+                            like['user'] = {
+                                "id": like['user_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
+            
+            # Добавляем информацию об авторах для комментариев
+            if 'comments' in post and post['comments']:
+                for comment in post['comments']:
+                    if 'author_id' in comment and not 'author' in comment:
+                        try:
+                            author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
+                            if author_response.status_code == 200:
+                                comment['author'] = author_response.json()
+                            else:
+                                comment['author'] = {
+                                    "id": comment['author_id'],
+                                    "username": "[Удаленный пользователь]",
+                                    "full_name": "[Удаленный пользователь]",
+                                    "about_me": None
+                                }
+                        except Exception as e:
+                            logger.error(f"Error fetching author for comment: {str(e)}")
+                            comment['author'] = {
+                                "id": comment['author_id'],
+                                "username": "[Удаленный пользователь]",
+                                "full_name": "[Удаленный пользователь]",
+                                "about_me": None
+                            }
                 
         return posts
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting posts: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -356,6 +521,7 @@ async def create_comment(post_id: int, comment_data: CommentCreate, user_id: int
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # 1. Создаем комментарий
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/comments/",
             json={**comment_data.dict(), "author_id": user_id}
@@ -363,10 +529,28 @@ async def create_comment(post_id: int, comment_data: CommentCreate, user_id: int
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error creating comment"))
 
+        # 2. Получаем данные комментария
+        comment_data = response.json()
+        
+        # 3. Получаем информацию о пользователе
+        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+        if user_response.status_code == 200:
+            # 4. Добавляем информацию о пользователе в ответ
+            comment_data["author"] = user_response.json()
+        else:
+            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
+            comment_data["author"] = {
+                "id": user_id,
+                "username": "[Удаленный пользователь]",
+                "full_name": "[Удаленный пользователь]",
+                "about_me": None
+            }
+
+        # 6. Сбрасываем кеш поста
         cache_key = f"post_{post_id}"
         set_to_cache(cache_key, None, expire=0)
         
-        return response.json()
+        return comment_data
     except Exception as e:
         logger.error(f"Error creating comment for post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -383,7 +567,33 @@ async def get_post_comments(post_id: int, skip: int = 0, limit: int = 100, user_
         )
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting comments"))
-        return response.json()
+        
+        comments = response.json()
+        
+        # Добавляем информацию об авторах для комментариев
+        for comment in comments:
+            if 'author_id' in comment and not 'author' in comment:
+                try:
+                    author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
+                    if author_response.status_code == 200:
+                        comment['author'] = author_response.json()
+                    else:
+                        comment['author'] = {
+                            "id": comment['author_id'],
+                            "username": "[Удаленный пользователь]",
+                            "full_name": "[Удаленный пользователь]",
+                            "about_me": None
+                        }
+                except Exception as e:
+                    logger.error(f"Error fetching author for comment: {str(e)}")
+                    comment['author'] = {
+                        "id": comment['author_id'],
+                        "username": "[Удаленный пользователь]",
+                        "full_name": "[Удаленный пользователь]",
+                        "about_me": None
+                    }
+                    
+        return comments
     except Exception as e:
         logger.error(f"Error getting comments for post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -394,6 +604,7 @@ async def update_comment(comment_id: int, comment_data: CommentUpdate, user_id: 
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # 1. Обновляем комментарий
         response = requests.patch(
             f"{POST_SERVICE_URL}/comments/{comment_id}",
             json=comment_data.dict(),
@@ -401,7 +612,25 @@ async def update_comment(comment_id: int, comment_data: CommentUpdate, user_id: 
         )
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error updating comment"))
-        return response.json()
+        
+        # 2. Получаем данные комментария
+        comment_data = response.json()
+        
+        # 3. Получаем информацию о пользователе
+        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+        if user_response.status_code == 200:
+            # 4. Добавляем информацию о пользователе в ответ
+            comment_data["author"] = user_response.json()
+        else:
+            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
+            comment_data["author"] = {
+                "id": user_id,
+                "username": "[Удаленный пользователь]",
+                "full_name": "[Удаленный пользователь]",
+                "about_me": None
+            }
+            
+        return comment_data
     except Exception as e:
         logger.error(f"Error updating comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -429,6 +658,7 @@ async def add_like(post_id: int, user_id: int = Depends(verify_token)):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # 1. Добавляем лайк через сервис постов
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/likes/",
             json={"user_id": user_id}
@@ -436,10 +666,29 @@ async def add_like(post_id: int, user_id: int = Depends(verify_token)):
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error adding like"))
         
+        # 2. Получаем данные лайка
+        like_data = response.json()
+        
+        # 3. Получаем информацию о пользователе
+        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+        if user_response.status_code == 200:
+            user_data = user_response.json()
+            # 4. Добавляем информацию о пользователе в ответ
+            like_data["user"] = user_data
+        else:
+            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
+            like_data["user"] = {
+                "id": user_id,
+                "username": "[Удаленный пользователь]",
+                "full_name": "[Удаленный пользователь]",
+                "about_me": None
+            }
+        
+        # 6. Сбрасываем кеш поста
         cache_key = f"post_{post_id}"
         set_to_cache(cache_key, None, expire=0)
         
-        return response.json()
+        return like_data
     except Exception as e:
         logger.error(f"Error adding like to post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -456,10 +705,12 @@ async def remove_like(post_id: int, user_id: int = Depends(verify_token)):
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error removing like"))
         
+        # Сбрасываем кеш для поста
         cache_key = f"post_{post_id}"
         set_to_cache(cache_key, None, expire=0)
         
-        return response.json()
+        # Возвращаем успешный ответ без модели валидации
+        return {"success": True}
     except Exception as e:
         logger.error(f"Error removing like from post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

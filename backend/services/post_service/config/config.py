@@ -51,7 +51,7 @@ class LikeResponse(LikeBase):
 
 class PostBase(BaseModel):
     title: str
-    content: str  # HTML контент с форматированием
+    content: str 
 
 class PostCreate(PostBase):
     author_id: int

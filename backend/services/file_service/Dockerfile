@@ -7,7 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Создаем директорию для загрузок
 RUN mkdir -p uploads
 
 EXPOSE 8005
