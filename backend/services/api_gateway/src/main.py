@@ -244,7 +244,7 @@ async def get_post(post_id: int):
             for image in cached_post["images"]:
                 if "image_url" in image and image["image_url"].startswith("/files/"):
                     image["original_url"] = image["image_url"]
-                    image["image_url"] = f"http://147.45.161.95:8000{image['image_url']}"
+                    image["image_url"] = f"{image['image_url']}"
         
         return cached_post
 
