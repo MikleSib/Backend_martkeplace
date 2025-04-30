@@ -240,12 +240,6 @@ async def get_post(post_id: int):
                     "about_me": None
                 }
         
-        if "images" in cached_post:
-            for image in cached_post["images"]:
-                if "image_url" in image and image["image_url"].startswith("/files/"):
-                    image["original_url"] = image["image_url"]
-                    image["image_url"] = f"{image['image_url']}"
-        
         return cached_post
 
     try:
@@ -275,12 +269,6 @@ async def get_post(post_id: int):
                     "full_name": "[Удаленный пользователь]",
                     "about_me": None
                 }
-        
-        if "images" in post_data:
-            for image in post_data["images"]:
-                if "image_url" in image and image["image_url"].startswith("/files/"):
-                    image["original_url"] = image["image_url"]
-                    image["image_url"] = f"{image['image_url']}"
         
         set_to_cache(cache_key, post_data)
         logger.info(f"Post {post_id} saved to cache")
