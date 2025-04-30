@@ -211,7 +211,7 @@ async def create_post(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/post/{post_id}", response_model=PostResponse)
-async def get_post(post_id: int, user_id: int = Depends(verify_token)):
+async def get_post(post_id: int):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
