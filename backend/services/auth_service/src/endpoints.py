@@ -5,6 +5,7 @@ from database import get_db
 from database import get_user_by_username, create_user
 from config import UserRegister, UserLogin
 from jwt import create_access_token, create_refresh_token, verify_access_token
+from .utils.password import verify_password
 import httpx
 
 router = APIRouter()
@@ -45,7 +46,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 @router.post("/auth/login")
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_username(db, user_data.username)
-    if not user or user.password != user_data.password:
+    if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
     access_token = create_access_token({"sub": user.username, "email": user.email, "id": user.id})
     refresh_token = create_refresh_token({"sub": user.username, "email": user.email, "id": user.id})
