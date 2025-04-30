@@ -73,7 +73,7 @@ class LikeResponse(LikeBase):
 
 class PostBase(BaseModel):
     title: str
-    content: str  # HTML контент с форматированием
+    content: str 
 
 class PostCreate(PostBase):
     images: Optional[List[PostImageCreate]] = []

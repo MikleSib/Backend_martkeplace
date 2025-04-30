@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from .config import *
 import logging
+from fastapi.responses import StreamingResponse
+import io
 
 app = FastAPI(
     title="API Gateway",
@@ -41,7 +43,8 @@ SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
     "user": USER_SERVICE_URL,
     "redis": REDIS_SERVICE_URL,
-    "post": POST_SERVICE_URL
+    "post": POST_SERVICE_URL,
+    "file": FILE_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -417,6 +420,21 @@ async def remove_like(post_id: int, user_id: int = Depends(verify_token)):
     except Exception as e:
         logger.error(f"Error removing like from post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/files/{filename}")
+async def get_file(filename: str):
+    try:
+        response = requests.get(f"{FILE_SERVICE_URL}/files/{filename}", stream=True)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="File not found")
+        
+        return StreamingResponse(
+            io.BytesIO(response.content),
+            media_type=response.headers.get("content-type", "application/octet-stream")
+        )
+    except Exception as e:
+        logger.error(f"Error getting file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error getting file")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
