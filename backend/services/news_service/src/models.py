@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class NewsCategory(str, Enum):
-    MAIN = "main"  # Основные новости
+    MAIN = "news"  # Основные новости
     GUIDES = "guides"  # Гайды
     EVENTS = "events"  # События
     FISH_SPECIES = "fish_species"  # Виды рыб
