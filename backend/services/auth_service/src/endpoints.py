@@ -7,10 +7,14 @@ from config import UserRegister, UserLogin
 from jwt import create_access_token, create_refresh_token, verify_access_token
 from src.utils.password import verify_password
 import httpx
+from pydantic import BaseModel
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 USER_SERVICE_URL = "http://user_service:8002"
+
+class RefreshToken(BaseModel):
+    refresh_token: str
 
 @router.post("/auth/register")
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
@@ -72,15 +76,15 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     }
 
 @router.post("/auth/refresh")
-async def refresh(refresh_token: str = Depends(oauth2_scheme)):
-    payload = verify_access_token(refresh_token)
+async def refresh(refresh_data: RefreshToken):
+    payload = verify_access_token(refresh_data.refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     access_token = create_access_token({
         "sub": payload["sub"], 
         "email": payload["email"], 
         "id": payload["id"],
-        "is_admin": payload["is_admin"]
+        "is_admin": payload.get("is_admin", False)
     })
     return {"access_token": access_token}
 
