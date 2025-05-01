@@ -169,7 +169,7 @@ async def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(secu
     try:
         response = requests.post(
             f"{AUTH_SERVICE_URL}/auth/refresh",
-            headers={"Authorization": f"Bearer {credentials.credentials}"}
+            json={"refresh_token": credentials.credentials}
         )
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Failed to refresh token"))

@@ -27,4 +27,11 @@ def verify_access_token(token: str):
         return payload
     except jwt.JWTError:
         return None
+
+def verify_refresh_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.JWTError:
+        return None
     

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from database import get_user_by_username, create_user
 from config import UserRegister, UserLogin
-from jwt import create_access_token, create_refresh_token, verify_access_token
+from jwt import create_access_token, create_refresh_token, verify_access_token, verify_refresh_token
 from src.utils.password import verify_password
 import httpx
 from pydantic import BaseModel
@@ -77,16 +77,29 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/auth/refresh")
 async def refresh(refresh_data: RefreshToken):
-    payload = verify_access_token(refresh_data.refresh_token)
+    payload = verify_refresh_token(refresh_data.refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+    
     access_token = create_access_token({
         "sub": payload["sub"], 
         "email": payload["email"], 
         "id": payload["id"],
         "is_admin": payload.get("is_admin", False)
     })
-    return {"access_token": access_token}
+    
+    # Создаем новый refresh токен
+    refresh_token = create_refresh_token({
+        "sub": payload["sub"], 
+        "email": payload["email"], 
+        "id": payload["id"],
+        "is_admin": payload.get("is_admin", False)
+    })
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
 
 @router.get("/auth/check_token")
 async def check_token(token: str, db: AsyncSession = Depends(get_db)):

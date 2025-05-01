@@ -61,7 +61,7 @@ async def update_post(post_id: int, post_update: PostUpdate, author_id: int, db:
     return updated_post
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, admin_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_post(post_id: int, admin_id: str, db: AsyncSession = Depends(get_db)):
     crud = PostCRUD(db)
     post = await crud.get_post(post_id)
     if not post:
@@ -132,7 +132,7 @@ async def update_comment(
 @router.delete("/comments/{comment_id}")
 async def delete_comment(
     comment_id: int,
-    admin_id: int,
+    admin_id: str,
     db: AsyncSession = Depends(get_db)
 ):
     crud = PostCRUD(db)
