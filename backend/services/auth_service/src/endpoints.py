@@ -48,21 +48,53 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_username(db, user_data.username)
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
-    access_token = create_access_token({"sub": user.username, "email": user.email, "id": user.id})
-    refresh_token = create_refresh_token({"sub": user.username, "email": user.email, "id": user.id})
-    return {"access_token": access_token, "refresh_token": refresh_token}
+    access_token = create_access_token({
+        "sub": user.username, 
+        "email": user.email, 
+        "id": user.id,
+        "is_admin": user.is_admin
+    })
+    refresh_token = create_refresh_token({
+        "sub": user.username, 
+        "email": user.email, 
+        "id": user.id,
+        "is_admin": user.is_admin
+    })
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_admin": user.is_admin
+        }
+    }
 
 @router.post("/auth/refresh")
 async def refresh(refresh_token: str = Depends(oauth2_scheme)):
     payload = verify_access_token(refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    access_token = create_access_token({"sub": payload["sub"], "email": payload["email"], "id": payload["id"]})
+    access_token = create_access_token({
+        "sub": payload["sub"], 
+        "email": payload["email"], 
+        "id": payload["id"],
+        "is_admin": payload["is_admin"]
+    })
     return {"access_token": access_token}
 
 @router.get("/auth/check_token")
-async def check_token(token: str):
+async def check_token(token: str, db: AsyncSession = Depends(get_db)):
     payload = verify_access_token(token)
     if not payload:
-        return False   
-    return {"user_id": payload["id"]}
+        return False
+    
+    user = await get_user_by_username(db, payload["sub"])
+    if not user:
+        return False
+        
+    return {
+        "user_id": user.id,
+        "is_admin": user.is_admin
+    }

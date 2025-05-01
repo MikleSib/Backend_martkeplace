@@ -38,13 +38,15 @@ USER_SERVICE_URL = "http://user_service:8002"
 REDIS_SERVICE_URL = "http://redis_service:8003"
 POST_SERVICE_URL = "http://post_service:8004"
 FILE_SERVICE_URL = "http://file_service:8005"
+NEWS_SERVICE_URL = "http://news_service:8006"
 
 SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
     "user": USER_SERVICE_URL,
     "redis": REDIS_SERVICE_URL,
     "post": POST_SERVICE_URL,
-    "file": FILE_SERVICE_URL
+    "file": FILE_SERVICE_URL,
+    "news": NEWS_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -91,6 +93,23 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         if not response.json():
             raise HTTPException(status_code=401, detail="Invalid token")
         return response.json()["user_id"]
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if not response.json():
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user_data = response.json()
+        if not user_data.get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Not authorized as admin")
+            
+        return user_data["user_id"]
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -745,6 +764,139 @@ async def get_file(filename: str):
     except Exception as e:
         logger.error(f"Error getting file: {str(e)}")
         raise HTTPException(status_code=500, detail="Error getting file")
+
+@app.get("/news/")
+async def get_news(skip: int = 0, limit: int = 100, category: str = None):
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        params = {"skip": skip, "limit": limit}
+        if category:
+            params["category"] = category
+            
+        response = requests.get(f"{NEWS_SERVICE_URL}/news/", params=params)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting news"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error getting news: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/news/{news_id}")
+async def get_news_by_id(news_id: int):
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/{news_id}"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        response = requests.get(f"{NEWS_SERVICE_URL}/news/{news_id}")
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting news"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error getting news {news_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/news/")
+async def create_news(news_data: dict, user_id: int = Depends(verify_admin)):
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        response = requests.post(
+            f"{NEWS_SERVICE_URL}/news/",
+            json=news_data,
+            params={"author_id": user_id}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error creating news"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error creating news: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.patch("/news/{news_id}")
+async def update_news(news_id: int, news_data: dict, user_id: int = Depends(verify_admin)):
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/{news_id}"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        response = requests.patch(
+            f"{NEWS_SERVICE_URL}/news/{news_id}",
+            json=news_data,
+            params={"author_id": user_id}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error updating news"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error updating news {news_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/news/{news_id}")
+async def delete_news(news_id: int, user_id: int = Depends(verify_admin)):
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/{news_id}"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        response = requests.delete(
+            f"{NEWS_SERVICE_URL}/news/{news_id}",
+            params={"author_id": user_id}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting news"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error deleting news {news_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/news/stats/categories")
+async def get_news_categories_stats():
+    if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/stats/categories"):
+        raise HTTPException(status_code=503, detail="News service is not running")
+    
+    try:
+        response = requests.get(f"{NEWS_SERVICE_URL}/news/stats/categories")
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error getting news categories stats"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error getting news categories stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/post/{post_id}/admin")
+async def admin_delete_post(post_id: int, user_id: int = Depends(verify_admin)):
+    if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}"):
+        raise HTTPException(status_code=503, detail="Post service is not running")
+    
+    try:
+        response = requests.delete(
+            f"{POST_SERVICE_URL}/posts/{post_id}/admin",
+            params={"admin_id": user_id}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting post"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error deleting post {post_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/comment/{comment_id}/admin")
+async def admin_delete_comment(comment_id: int, user_id: int = Depends(verify_admin)):
+    if not check_route_enabled(f"{POST_SERVICE_URL}/comments/{comment_id}"):
+        raise HTTPException(status_code=503, detail="Post service is not running")
+    
+    try:
+        response = requests.delete(
+            f"{POST_SERVICE_URL}/comments/{comment_id}/admin",
+            params={"admin_id": user_id}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting comment"))
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error deleting comment {comment_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

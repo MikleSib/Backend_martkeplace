@@ -72,6 +72,19 @@ class PostCRUD:
             author_info = await self.get_user_info(post.author_id)
             if author_info:
                 post.author_info = author_info
+                
+            # Получаем информацию об авторах комментариев
+            for comment in post.comments:
+                author_info = await self.get_user_info(comment.author_id)
+                if author_info:
+                    comment.author_info = author_info
+                    
+            # Получаем информацию о пользователях в лайках
+            for like in post.likes:
+                user_info = await self.get_user_info(like.user_id)
+                if user_info:
+                    like.user_info = user_info
+                    
         return post
 
     async def get_all_posts(self, skip: int = 0, limit: int = 100) -> List[Post]:
