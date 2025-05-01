@@ -139,16 +139,7 @@ async def delete_comment(
     comment = await crud.get_comment(comment_id)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-    
-    try:
-        response = requests.get(
-            f"http://auth_service:8001/auth/check_token",
-            params={"token": admin_id} 
-        )
-        if not response.json() or not response.json().get("is_admin", False):
-            raise HTTPException(status_code=403, detail="Only administrators can delete comments")
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid token")
+
     
     success = await crud.delete_comment(comment_id)
     if not success:

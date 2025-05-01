@@ -113,5 +113,7 @@ async def check_token(token: str, db: AsyncSession = Depends(get_db)):
         
     return {
         "user_id": user.id,
-        "is_admin": user.is_admin
+        "is_admin": user.is_admin,
+        "username": user.username,
+        "email": user.email
     }

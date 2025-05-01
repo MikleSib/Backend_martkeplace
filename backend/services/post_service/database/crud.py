@@ -242,11 +242,19 @@ class PostCRUD:
         await self.session.refresh(comment)
         return comment
 
-    async def delete_comment(self, comment_id: int) -> bool:
+    async def get_comment(self, comment_id: int) -> Optional[Comment]:
         result = await self.session.execute(
             select(Comment).where(Comment.id == comment_id)
         )
         comment = result.scalar_one_or_none()
+        if comment:
+            author_info = await self.get_user_info(comment.author_id)
+            if author_info:
+                comment.author_info = author_info
+        return comment
+
+    async def delete_comment(self, comment_id: int) -> bool:
+        comment = await self.get_comment(comment_id)
         if not comment:
             return False
 

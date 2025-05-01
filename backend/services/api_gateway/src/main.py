@@ -111,7 +111,7 @@ async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(secur
         if not user_data.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Not authorized as admin")
             
-        return user_data["user_id"]
+        return credentials.credentials  # Возвращаем сам токен
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -273,82 +273,6 @@ async def get_post(post_id: int):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
-    cache_key = f"post_{post_id}"
-    cached_post = get_from_cache(cache_key)
-    if cached_post:
-        logger.info(f"Post {post_id} found in cache")
-        # Добавляем информацию об авторе, если её нет в кешированных данных
-        if "author" not in cached_post and "author_id" in cached_post:
-            try:
-                author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{cached_post['author_id']}")
-                if author_response.status_code == 200:
-                    cached_post['author'] = author_response.json()
-                else:
-                    cached_post['author'] = {
-                        "id": cached_post['author_id'],
-                        "username": "[Удаленный пользователь]",
-                        "full_name": "[Удаленный пользователь]",
-                        "about_me": None
-                    }
-            except Exception as e:
-                logger.error(f"Error fetching author for post {post_id}: {str(e)}")
-                cached_post['author'] = {
-                    "id": cached_post['author_id'],
-                    "username": "[Удаленный пользователь]",
-                    "full_name": "[Удаленный пользователь]",
-                    "about_me": None
-                }
-        
-        # Добавляем информацию о пользователях для лайков
-        if 'likes' in cached_post and cached_post['likes']:
-            for like in cached_post['likes']:
-                if 'user_id' in like and not 'user' in like:
-                    try:
-                        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{like['user_id']}")
-                        if user_response.status_code == 200:
-                            like['user'] = user_response.json()
-                        else:
-                            like['user'] = {
-                                "id": like['user_id'],
-                                "username": "[Удаленный пользователь]",
-                                "full_name": "[Удаленный пользователь]",
-                                "about_me": None
-                            }
-                    except Exception as e:
-                        logger.error(f"Error fetching user for like: {str(e)}")
-                        like['user'] = {
-                            "id": like['user_id'],
-                            "username": "[Удаленный пользователь]",
-                            "full_name": "[Удаленный пользователь]",
-                            "about_me": None
-                        }
-        
-        # Добавляем информацию об авторах для комментариев
-        if 'comments' in cached_post and cached_post['comments']:
-            for comment in cached_post['comments']:
-                if 'author_id' in comment and not 'author' in comment:
-                    try:
-                        author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
-                        if author_response.status_code == 200:
-                            comment['author'] = author_response.json()
-                        else:
-                            comment['author'] = {
-                                "id": comment['author_id'],
-                                "username": "[Удаленный пользователь]",
-                                "full_name": "[Удаленный пользователь]",
-                                "about_me": None
-                            }
-                    except Exception as e:
-                        logger.error(f"Error fetching author for comment: {str(e)}")
-                        comment['author'] = {
-                            "id": comment['author_id'],
-                            "username": "[Удаленный пользователь]",
-                            "full_name": "[Удаленный пользователь]",
-                            "about_me": None
-                        }
-                    
-        return cached_post
-
     try:
         response = requests.get(f"{POST_SERVICE_URL}/posts/{post_id}")
         if response.status_code != 200:
@@ -425,9 +349,6 @@ async def get_post(post_id: int):
                             "full_name": "[Удаленный пользователь]",
                             "about_me": None
                         }
-        
-        set_to_cache(cache_key, post_data)
-        logger.info(f"Post {post_id} saved to cache")
         
         return post_data
     except Exception as e:
@@ -670,19 +591,42 @@ async def update_comment(
         logger.error(f"Error updating comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.delete("/comment/{comment_id}")
-async def delete_comment(comment_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if not check_route_enabled(f"{POST_SERVICE_URL}/comments/{comment_id}"):
+@app.delete("/comment/{comment_id}/admin")
+async def admin_delete_comment(comment_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not check_route_enabled(f"{POST_SERVICE_URL}/comments/health"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        logger.info(f"Admin deleting comment {comment_id}")
+        logger.info(f"Credentials: {credentials.credentials}")
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}  
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        admin_id = user_info.get("user_id")
+        if not admin_id:
+            raise HTTPException(status_code=401, detail="Invalid token data")
+            
+        # Проверяем права администратора
+        if not user_info.get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can delete comments")
+        
         response = requests.delete(
             f"{POST_SERVICE_URL}/comments/{comment_id}",
-            params={"admin_id": credentials.credentials}
+            params={"admin_id": admin_id}
         )
-        return handle_service_response(response, "Error deleting comment")
-    except HTTPException as e:
-        raise e
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting comment"))
+        return response.json()
     except Exception as e:
         logger.error(f"Error deleting comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -724,12 +668,30 @@ async def add_like(post_id: int, credentials: HTTPAuthorizationCredentials = Dep
 
 @app.delete("/post/{post_id}/like")
 async def remove_like(post_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/likes/{credentials.credentials}"):
+    if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/likes"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # Проверяем токен и получаем ID пользователя
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        user_id = user_info.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token data")
+        
         response = requests.delete(
-            f"{POST_SERVICE_URL}/posts/{post_id}/likes/{credentials.credentials}"
+            f"{POST_SERVICE_URL}/posts/{post_id}/likes/{user_id}"
         )
         return handle_service_response(response, "Error removing like")
     except HTTPException as e:
@@ -908,21 +870,49 @@ async def admin_delete_post(post_id: int, user_id: int = Depends(verify_admin)):
         logger.error(f"Error deleting post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.delete("/comment/{comment_id}/admin")
-async def admin_delete_comment(comment_id: int, user_id: int = Depends(verify_admin)):
-    if not check_route_enabled(f"{POST_SERVICE_URL}/comments/{comment_id}"):
-        raise HTTPException(status_code=503, detail="Post service is not running")
+@app.post("/uploads")
+async def upload_file(
+    file: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    if not check_route_enabled(f"{FILE_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="File service is not running")
     
     try:
-        response = requests.delete(
-            f"{POST_SERVICE_URL}/comments/{comment_id}/admin",
-            params={"admin_id": user_id}
+        # Проверяем токен
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
         )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Проверяем тип файла
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="Only image files are allowed")
+            
+        # Отправляем файл в file_service
+        files = {"file": (file.filename, file.file, file.content_type)}
+        response = requests.post(f"{FILE_SERVICE_URL}/upload", files=files)
+        
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting comment"))
-        return response.json()
+            raise HTTPException(status_code=response.status_code, detail="Error uploading file")
+            
+        file_info = response.json()
+        return {
+            "url": f"/files/{file_info['filename']}",
+            "filename": file_info['filename'],
+            "size": file_info['size'],
+            "content_type": file_info['content_type']
+        }
     except Exception as e:
-        logger.error(f"Error deleting comment {comment_id}: {str(e)}")
+        logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
