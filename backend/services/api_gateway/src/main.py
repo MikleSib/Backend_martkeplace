@@ -113,6 +113,15 @@ async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(secur
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+def handle_service_response(response, error_prefix: str):
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    elif response.status_code == 403:
+        raise HTTPException(status_code=403, detail=response.json().get("detail", "Access denied"))
+    elif response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", f"{error_prefix}"))
+    return response.json()
+
 @app.get("/health")
 async def root():
     return {"message": "health check"}
@@ -206,21 +215,27 @@ async def create_post(
     title: str = Form(...),
     content: str = Form(...),
     images: list[UploadFile] = File(None),
-    user_id: int = Depends(verify_token)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
-        if user_response.status_code != 200:
-            raise HTTPException(status_code=404, detail="User profile not found")
+        user_response = requests.get(
+            f"{USER_SERVICE_URL}/user/profile/{credentials.credentials}",
+            params={"token": credentials.credentials}
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="User profile not found")
+            
         user_info = user_response.json()
         
         post_data = {
             "title": title,
             "content": content,
-            "author_id": user_id,
+            "author_id": user_info["id"],
             "images": []
         }
         
@@ -238,10 +253,7 @@ async def create_post(
             f"{POST_SERVICE_URL}/posts/",
             json=post_data
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error creating post"))
-            
-        return {"message": "Post created successfully"}
+        return handle_service_response(response, "Error creating post")
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -507,8 +519,12 @@ async def get_all_posts(skip: int = 0, limit: int = 100):
         logger.error(f"Error getting posts: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.patch("/post/{post_id}", response_model=PostResponse)
-async def update_post(post_id: int, post_data: PostUpdate, user_id: int = Depends(verify_token)):
+@app.patch("/post/{post_id}")
+async def update_post(
+    post_id: int, 
+    post_data: PostUpdate, 
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
@@ -516,15 +532,11 @@ async def update_post(post_id: int, post_data: PostUpdate, user_id: int = Depend
         response = requests.patch(
             f"{POST_SERVICE_URL}/posts/{post_id}",
             json=post_data.dict(),
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error updating post"))
-
-        cache_key = f"post_{post_id}"
-        set_to_cache(cache_key, None, expire=0)
-        
-        return response.json()
+        return handle_service_response(response, "Error updating post")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error updating post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -539,49 +551,30 @@ async def delete_post(post_id: int, credentials: HTTPAuthorizationCredentials = 
             f"{POST_SERVICE_URL}/posts/{post_id}",
             params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting post"))
-        return response.json()
+        return handle_service_response(response, "Error deleting post")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error deleting post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/post/{post_id}/comment", response_model=CommentResponse)
-async def create_comment(post_id: int, comment_data: CommentCreate, user_id: int = Depends(verify_token)):
+@app.post("/post/{post_id}/comment")
+async def create_comment(
+    post_id: int, 
+    comment_data: CommentCreate, 
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/comments"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # 1. Создаем комментарий
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/comments/",
-            json={**comment_data.dict(), "author_id": user_id}
+            json={**comment_data.dict(), "author_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error creating comment"))
-
-        # 2. Получаем данные комментария
-        comment_data = response.json()
-        
-        # 3. Получаем информацию о пользователе
-        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
-        if user_response.status_code == 200:
-            # 4. Добавляем информацию о пользователе в ответ
-            comment_data["author"] = user_response.json()
-        else:
-            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
-            comment_data["author"] = {
-                "id": user_id,
-                "username": "[Удаленный пользователь]",
-                "full_name": "[Удаленный пользователь]",
-                "about_me": None
-            }
-
-        # 6. Сбрасываем кеш поста
-        cache_key = f"post_{post_id}"
-        set_to_cache(cache_key, None, expire=0)
-        
-        return comment_data
+        return handle_service_response(response, "Error creating comment")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating comment for post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -629,39 +622,24 @@ async def get_post_comments(post_id: int, skip: int = 0, limit: int = 100, user_
         logger.error(f"Error getting comments for post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.patch("/comment/{comment_id}", response_model=CommentResponse)
-async def update_comment(comment_id: int, comment_data: CommentUpdate, user_id: int = Depends(verify_token)):
+@app.patch("/comment/{comment_id}")
+async def update_comment(
+    comment_id: int, 
+    comment_data: CommentUpdate, 
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     if not check_route_enabled(f"{POST_SERVICE_URL}/comments/{comment_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # 1. Обновляем комментарий
         response = requests.patch(
             f"{POST_SERVICE_URL}/comments/{comment_id}",
             json=comment_data.dict(),
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error updating comment"))
-        
-        # 2. Получаем данные комментария
-        comment_data = response.json()
-        
-        # 3. Получаем информацию о пользователе
-        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
-        if user_response.status_code == 200:
-            # 4. Добавляем информацию о пользователе в ответ
-            comment_data["author"] = user_response.json()
-        else:
-            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
-            comment_data["author"] = {
-                "id": user_id,
-                "username": "[Удаленный пользователь]",
-                "full_name": "[Удаленный пользователь]",
-                "about_me": None
-            }
-            
-        return comment_data
+        return handle_service_response(response, "Error updating comment")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error updating comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -676,72 +654,42 @@ async def delete_comment(comment_id: int, credentials: HTTPAuthorizationCredenti
             f"{POST_SERVICE_URL}/comments/{comment_id}",
             params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting comment"))
-        return response.json()
+        return handle_service_response(response, "Error deleting comment")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error deleting comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/post/{post_id}/like", response_model=LikeResponse)
-async def add_like(post_id: int, user_id: int = Depends(verify_token)):
+@app.post("/post/{post_id}/like")
+async def add_like(post_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/likes"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # 1. Добавляем лайк через сервис постов
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/likes/",
-            json={"user_id": user_id}
+            json={"user_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error adding like"))
-        
-        # 2. Получаем данные лайка
-        like_data = response.json()
-        
-        # 3. Получаем информацию о пользователе
-        user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
-        if user_response.status_code == 200:
-            user_data = user_response.json()
-            # 4. Добавляем информацию о пользователе в ответ
-            like_data["user"] = user_data
-        else:
-            # 5. Если не удалось получить информацию о пользователе, добавляем заглушку
-            like_data["user"] = {
-                "id": user_id,
-                "username": "[Удаленный пользователь]",
-                "full_name": "[Удаленный пользователь]",
-                "about_me": None
-            }
-        
-        # 6. Сбрасываем кеш поста
-        cache_key = f"post_{post_id}"
-        set_to_cache(cache_key, None, expire=0)
-        
-        return like_data
+        return handle_service_response(response, "Error adding like")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error adding like to post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/post/{post_id}/like")
-async def remove_like(post_id: int, user_id: int = Depends(verify_token)):
-    if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/likes/{user_id}"):
+async def remove_like(post_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}/likes/{credentials.credentials}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
         response = requests.delete(
-            f"{POST_SERVICE_URL}/posts/{post_id}/likes/{user_id}"
+            f"{POST_SERVICE_URL}/posts/{post_id}/likes/{credentials.credentials}"
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error removing like"))
-        
-        # Сбрасываем кеш для поста
-        cache_key = f"post_{post_id}"
-        set_to_cache(cache_key, None, expire=0)
-        
-        # Возвращаем успешный ответ без модели валидации
-        return {"success": True}
+        return handle_service_response(response, "Error removing like")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error removing like from post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -794,7 +742,7 @@ async def get_news_by_id(news_id: int):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/news/")
-async def create_news(news_data: dict, user_id: int = Depends(verify_admin)):
+async def create_news(news_data: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not check_route_enabled(f"{NEWS_SERVICE_URL}/news"):
         raise HTTPException(status_code=503, detail="News service is not running")
     
@@ -802,17 +750,21 @@ async def create_news(news_data: dict, user_id: int = Depends(verify_admin)):
         response = requests.post(
             f"{NEWS_SERVICE_URL}/news/",
             json=news_data,
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error creating news"))
-        return response.json()
+        return handle_service_response(response, "Error creating news")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating news: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.patch("/news/{news_id}")
-async def update_news(news_id: int, news_data: dict, user_id: int = Depends(verify_admin)):
+async def update_news(
+    news_id: int, 
+    news_data: dict, 
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/{news_id}"):
         raise HTTPException(status_code=503, detail="News service is not running")
     
@@ -820,28 +772,28 @@ async def update_news(news_id: int, news_data: dict, user_id: int = Depends(veri
         response = requests.patch(
             f"{NEWS_SERVICE_URL}/news/{news_id}",
             json=news_data,
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error updating news"))
-        return response.json()
+        return handle_service_response(response, "Error updating news")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error updating news {news_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/news/{news_id}")
-async def delete_news(news_id: int, user_id: int = Depends(verify_admin)):
+async def delete_news(news_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not check_route_enabled(f"{NEWS_SERVICE_URL}/news/{news_id}"):
         raise HTTPException(status_code=503, detail="News service is not running")
     
     try:
         response = requests.delete(
             f"{NEWS_SERVICE_URL}/news/{news_id}",
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting news"))
-        return response.json()
+        return handle_service_response(response, "Error deleting news")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error deleting news {news_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
