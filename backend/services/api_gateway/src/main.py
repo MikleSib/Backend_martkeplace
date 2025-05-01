@@ -7,6 +7,8 @@ from .config import *
 import logging
 from fastapi.responses import StreamingResponse
 import io
+from pydantic import BaseModel
+from typing import List
 
 app = FastAPI(
     title="API Gateway",
@@ -741,15 +743,28 @@ async def get_news_by_id(news_id: int):
         logger.error(f"Error getting news {news_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+class NewsContent(BaseModel):
+    type: str
+    content: str
+    order: int
+
+class NewsCreate(BaseModel):
+    title: str
+    category: str
+    contents: List[NewsContent]
+
 @app.post("/news/")
-async def create_news(news_data: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def create_news(
+    news_data: NewsCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     if not check_route_enabled(f"{NEWS_SERVICE_URL}/news"):
         raise HTTPException(status_code=503, detail="News service is not running")
     
     try:
         response = requests.post(
             f"{NEWS_SERVICE_URL}/news/",
-            json=news_data,
+            json=news_data.dict(),
             params={"admin_id": credentials.credentials}
         )
         return handle_service_response(response, "Error creating news")
