@@ -223,21 +223,23 @@ async def create_post(
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # Проверяем токен и получаем ID пользователя
         user_response = requests.get(
-            f"{USER_SERVICE_URL}/user/profile/{credentials.credentials}",
+            f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
         )
         if user_response.status_code == 401:
             raise HTTPException(status_code=401, detail="Invalid token")
         elif user_response.status_code != 200:
-            raise HTTPException(status_code=user_response.status_code, detail="User profile not found")
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
             
         user_info = user_response.json()
+        author_id = user_info["user_id"]
         
         post_data = {
             "title": title,
             "content": content,
-            "author_id": user_info["id"],
+            "author_id": author_id,
             "images": []
         }
         
@@ -253,7 +255,8 @@ async def create_post(
         
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/",
-            json=post_data
+            json=post_data,
+            params={"author_id": author_id}
         )
         return handle_service_response(response, "Error creating post")
     except HTTPException as e:
