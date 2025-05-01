@@ -10,6 +10,7 @@ from config import (
     LikeCreate, LikeResponse,
     PostImageCreate, PostImageResponse
 )
+import requests
 
 router = APIRouter()
 
@@ -60,13 +61,21 @@ async def update_post(post_id: int, post_update: PostUpdate, author_id: int, db:
     return updated_post
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, author_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_post(post_id: int, admin_id: int, db: AsyncSession = Depends(get_db)):
     crud = PostCRUD(db)
     post = await crud.get_post(post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    if post.author_id != author_id:
-        raise HTTPException(status_code=403, detail="You don't have permission to delete this post")
+    
+    try:
+        response = requests.get(
+            f"http://auth_service:8001/auth/check_token",
+            params={"token": admin_id} 
+        )
+        if not response.json() or not response.json().get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can delete posts")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
     
     success = await crud.delete_post(post_id)
     if not success:
@@ -123,15 +132,23 @@ async def update_comment(
 @router.delete("/comments/{comment_id}")
 async def delete_comment(
     comment_id: int,
-    author_id: int,
+    admin_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     crud = PostCRUD(db)
     comment = await crud.get_comment(comment_id)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if comment.author_id != author_id:
-        raise HTTPException(status_code=403, detail="You don't have permission to delete this comment")
+    
+    try:
+        response = requests.get(
+            f"http://auth_service:8001/auth/check_token",
+            params={"token": admin_id} 
+        )
+        if not response.json() or not response.json().get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can delete comments")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
     
     success = await crud.delete_comment(comment_id)
     if not success:

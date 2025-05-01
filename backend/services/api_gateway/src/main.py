@@ -530,21 +530,17 @@ async def update_post(post_id: int, post_data: PostUpdate, user_id: int = Depend
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/post/{post_id}")
-async def delete_post(post_id: int, user_id: int = Depends(verify_token)):
+async def delete_post(post_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts/{post_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
         response = requests.delete(
             f"{POST_SERVICE_URL}/posts/{post_id}",
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting post"))
-        
-        cache_key = f"post_{post_id}"
-        set_to_cache(cache_key, None, expire=0)
-        
         return response.json()
     except Exception as e:
         logger.error(f"Error deleting post {post_id}: {str(e)}")
@@ -671,14 +667,14 @@ async def update_comment(comment_id: int, comment_data: CommentUpdate, user_id: 
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/comment/{comment_id}")
-async def delete_comment(comment_id: int, user_id: int = Depends(verify_token)):
+async def delete_comment(comment_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not check_route_enabled(f"{POST_SERVICE_URL}/comments/{comment_id}"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
         response = requests.delete(
             f"{POST_SERVICE_URL}/comments/{comment_id}",
-            params={"author_id": user_id}
+            params={"admin_id": credentials.credentials}
         )
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Error deleting comment"))
