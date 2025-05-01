@@ -776,12 +776,16 @@ async def create_news(
             raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
             
         user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
         
         # Проверяем права администратора
         if not user_info.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Only administrators can create news")
             
-        author_id = user_info["user_id"]
+        author_id = user_info.get("user_id")
+        if not author_id:
+            raise HTTPException(status_code=401, detail="Invalid token data")
         
         response = requests.post(
             f"{NEWS_SERVICE_URL}/news/",
