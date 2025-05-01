@@ -576,9 +576,27 @@ async def create_comment(
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # Проверяем токен и получаем ID пользователя
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        author_id = user_info.get("user_id")
+        if not author_id:
+            raise HTTPException(status_code=401, detail="Invalid token data")
+        
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/comments/",
-            json={**comment_data.dict(), "author_id": credentials.credentials}
+            json={**comment_data.dict(), "author_id": author_id}
         )
         return handle_service_response(response, "Error creating comment")
     except HTTPException as e:
@@ -675,9 +693,27 @@ async def add_like(post_id: int, credentials: HTTPAuthorizationCredentials = Dep
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
+        # Проверяем токен и получаем ID пользователя
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        user_id = user_info.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token data")
+        
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/{post_id}/likes/",
-            json={"user_id": credentials.credentials}
+            json={"user_id": user_id}
         )
         return handle_service_response(response, "Error adding like")
     except HTTPException as e:
