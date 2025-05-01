@@ -765,10 +765,28 @@ async def create_news(
         raise HTTPException(status_code=503, detail="News service is not running")
     
     try:
+        # Проверяем токен и получаем ID пользователя и права администратора
+        user_response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if user_response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        elif user_response.status_code != 200:
+            raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
+            
+        user_info = user_response.json()
+        
+        # Проверяем права администратора
+        if not user_info.get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can create news")
+            
+        author_id = user_info["user_id"]
+        
         response = requests.post(
             f"{NEWS_SERVICE_URL}/news/",
             json=news_data.dict(),
-            params={"admin_id": credentials.credentials}
+            params={"author_id": author_id}
         )
         return handle_service_response(response, "Error creating news")
     except HTTPException as e:
