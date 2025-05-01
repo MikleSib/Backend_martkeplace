@@ -173,18 +173,21 @@ async def login(user_data: UserLogin):
         logger.error(f"Error in login: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+class RefreshToken(BaseModel):
+    refresh_token: str
+
 @app.post("/auth/refresh")
-async def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def refresh_token(refresh_data: RefreshToken):
     if not check_route_enabled(f"{AUTH_SERVICE_URL}/auth/refresh"):
         raise HTTPException(status_code=503, detail="Auth service is not running")
     try:
         response = requests.post(
             f"{AUTH_SERVICE_URL}/auth/refresh",
-            json={"refresh_token": credentials.credentials}
+            json=refresh_data.dict()
         )
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Failed to refresh token"))
-        return response.json()
+        return handle_service_response(response, "Failed to refresh token")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error refreshing token: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
