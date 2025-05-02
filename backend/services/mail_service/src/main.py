@@ -9,6 +9,7 @@ from email.header import decode_header
 import email.utils
 from datetime import datetime
 import random
+import os
 
 
 app = FastAPI(
@@ -23,11 +24,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Настройки почты
-EMAIL = "support@рыбный-форум.рф"
-EMAIL_ENCODED = "support@xn----9sbyncijf1ah6ec.xn--p1ai"
-PASSWORD = "cOu!Z{<8g@DBB7"
-DOMAIN = "xn----9sbyncijf1ah6ec.xn--p1ai"
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = int(os.environ.get("SMTP_PORT"))
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS").lower() == "true"
+SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME")
+EMAIL_DOMAIN = os.environ.get("EMAIL_DOMAIN")
+EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
+EMAIL_ADDRESS_ENCODED = os.environ.get("EMAIL_ADDRESS_ENCODED")
 
 class EmailRequest(BaseModel):
     to_email: EmailStr
@@ -47,14 +52,13 @@ async def test_email(email_request: EmailRequest):
     """
     try:
         message = MIMEMultipart()
-        from_name = "Рыбный Форум"
         
-        from_name_encoded = email.header.Header(from_name, 'utf-8').encode()
-        message["From"] = f"{from_name_encoded} <{EMAIL_ENCODED}>"
+        from_name_encoded = email.header.Header(SMTP_FROM_NAME, 'utf-8').encode()
+        message["From"] = f"{from_name_encoded} <{EMAIL_ADDRESS_ENCODED}>"
         message["To"] = email_request.to_email
         message["Subject"] = "тест"
         message["Date"] = email.utils.formatdate(localtime=True)
-        message["Message-ID"] = email.utils.make_msgid(domain=DOMAIN)
+        message["Message-ID"] = email.utils.make_msgid(domain=EMAIL_DOMAIN)
         message["MIME-Version"] = "1.0"
         
         text_content = "тест"
@@ -69,14 +73,14 @@ async def test_email(email_request: EmailRequest):
         logger.info(f"Sending test email to {email_request.to_email}")
         
         smtp = aiosmtplib.SMTP(
-            hostname="smtp.timeweb.ru",
-            port=465,
-            use_tls=True,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            use_tls=SMTP_USE_TLS,
             validate_certs=False
         )
         
         await smtp.connect()
-        await smtp.login(EMAIL_ENCODED, PASSWORD)
+        await smtp.login(EMAIL_ADDRESS_ENCODED, SMTP_PASSWORD)
         await smtp.send_message(message)
         await smtp.quit()
 
@@ -94,14 +98,13 @@ async def send_verification_code(email_request: VerificationEmailRequest):
     """
     try:
         message = MIMEMultipart()
-        from_name = "Рыбный Форум"
         
-        from_name_encoded = email.header.Header(from_name, 'utf-8').encode()
-        message["From"] = f"{from_name_encoded} <{EMAIL_ENCODED}>"
+        from_name_encoded = email.header.Header(SMTP_FROM_NAME, 'utf-8').encode()
+        message["From"] = f"{from_name_encoded} <{EMAIL_ADDRESS_ENCODED}>"
         message["To"] = email_request.to_email
         message["Subject"] = "Код подтверждения регистрации"
         message["Date"] = email.utils.formatdate(localtime=True)
-        message["Message-ID"] = email.utils.make_msgid(domain=DOMAIN)
+        message["Message-ID"] = email.utils.make_msgid(domain=EMAIL_DOMAIN)
         message["MIME-Version"] = "1.0"
         
         # Создаем текст письма с кодом
@@ -147,14 +150,14 @@ async def send_verification_code(email_request: VerificationEmailRequest):
         logger.info(f"Sending verification code to {email_request.to_email}")
         
         smtp = aiosmtplib.SMTP(
-            hostname="smtp.timeweb.ru",
-            port=465,
-            use_tls=True,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            use_tls=SMTP_USE_TLS,
             validate_certs=False
         )
         
         await smtp.connect()
-        await smtp.login(EMAIL_ENCODED, PASSWORD)
+        await smtp.login(EMAIL_ADDRESS_ENCODED, SMTP_PASSWORD)
         await smtp.send_message(message)
         await smtp.quit()
 

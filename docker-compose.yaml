@@ -194,8 +194,10 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_USE_TLS: ${SMTP_USE_TLS}
-      SMTP_USE_SSL: ${SMTP_USE_SSL}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      EMAIL_DOMAIN: ${EMAIL_DOMAIN}
+      EMAIL_ADDRESS: ${EMAIL_ADDRESS}
+      EMAIL_ADDRESS_ENCODED: ${EMAIL_ADDRESS_ENCODED}
       AUTH_SERVICE_URL: http://auth_service:8001
     depends_on:
       - auth_service
