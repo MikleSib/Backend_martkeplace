@@ -235,8 +235,29 @@ async def create_post(
         elif user_response.status_code != 200:
             raise HTTPException(status_code=user_response.status_code, detail="Failed to verify token")
             
-        user_info = user_response.json()
-        author_id = user_info["user_id"]
+        logger.info(f"Auth service response status: {user_response.status_code}")
+        logger.info(f"Auth service response content: {user_response.content}")
+        
+        try:
+            user_info = user_response.json()
+            logger.info(f"User info from auth service: {user_info}")
+        except Exception as e:
+            logger.error(f"Error parsing auth response: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error parsing auth response: {str(e)}")
+            
+        # Проверяем, что токен валидный
+        if not user_info.get("valid", False):
+            error_message = user_info.get("message", "Invalid token")
+            raise HTTPException(status_code=401, detail=error_message)
+            
+        logger.info(f"Type of user_info: {type(user_info)}")
+        
+        # Получаем ID пользователя из ответа auth_service
+        author_id = user_info.get("user_id")
+        logger.info(f"Author ID from user_info: {author_id}")
+        
+        if not author_id:
+            raise HTTPException(status_code=401, detail="Could not determine user ID")
         
         post_data = {
             "title": title,
@@ -257,10 +278,19 @@ async def create_post(
         
         response = requests.post(
             f"{POST_SERVICE_URL}/posts/",
-            json=post_data,
-            params={"author_id": author_id}
+            json=post_data
         )
-        return handle_service_response(response, "Error creating post")
+        
+        logger.info(f"Response status from post service: {response.status_code}")
+        logger.info(f"Response content: {response.content}")
+        
+        try:
+            response_data = response.json()
+            logger.info(f"Response JSON: {response_data}")
+            return response_data
+        except Exception as e:
+            logger.error(f"Error parsing response JSON: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error creating post: {str(e)}")
     except HTTPException as e:
         raise e
     except Exception as e:

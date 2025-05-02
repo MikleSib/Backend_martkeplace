@@ -105,13 +105,14 @@ async def refresh(refresh_data: RefreshToken):
 async def check_token(token: str, db: AsyncSession = Depends(get_db)):
     payload = verify_access_token(token)
     if not payload:
-        return False
+        return {"valid": False, "message": "Invalid token"}
     
     user = await get_user_by_username(db, payload["sub"])
     if not user:
-        return False
+        return {"valid": False, "message": "User not found"}
         
     return {
+        "valid": True,
         "user_id": user.id,
         "is_admin": user.is_admin,
         "username": user.username,

@@ -11,22 +11,65 @@ from config import (
     PostImageCreate, PostImageResponse
 )
 import requests
+import json
 
 router = APIRouter()
 
+# Redis cache helpers
+REDIS_SERVICE_URL = "http://redis_service:8003"
+POSTS_CACHE_KEY = "all_posts"
+CACHE_EXPIRATION = 3600  # 1 hour
+
+async def get_posts_from_cache():
+    try:
+        response = requests.get(f"{REDIS_SERVICE_URL}/get/{POSTS_CACHE_KEY}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error getting posts from cache: {e}")
+        return None
+
+async def set_posts_in_cache(posts):
+    try:
+        data = {
+            "key": POSTS_CACHE_KEY,
+            "value": posts,
+            "expire": CACHE_EXPIRATION
+        }
+        requests.post(f"{REDIS_SERVICE_URL}/set", json=data)
+    except Exception as e:
+        print(f"Error setting posts in cache: {e}")
+
+async def invalidate_posts_cache():
+    try:
+        # Устанавливаем пустой кэш с истекшим сроком действия (1 секунда)
+        data = {
+            "key": POSTS_CACHE_KEY,
+            "value": {},
+            "expire": 1
+        }
+        requests.post(f"{REDIS_SERVICE_URL}/set", json=data)
+    except Exception as e:
+        print(f"Error invalidating posts cache: {e}")
 
 @router.post("/posts/", response_model=PostResponse)
 async def create_post(post: PostCreate, db: AsyncSession = Depends(get_db)):
     crud = PostCRUD(db)
-    return await crud.create_post(
+    new_post = await crud.create_post(
         title=post.title,
         content=post.content,
         author_id=post.author_id,
         images=post.images
     )
+    # Инвалидируем кэш при создании нового поста
+    await invalidate_posts_cache()
+    return new_post
 
 @router.get("/posts/{post_id}", response_model=PostResponse)
 async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
+    # Для отдельного поста кэширование не используем, поскольку 
+    # это не критическая операция и она уже оптимизирована в базе данных
     crud = PostCRUD(db)
     post = await crud.get_post(post_id)
     if not post:
@@ -35,8 +78,31 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/posts/", response_model=List[PostResponse])
 async def get_all_posts(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+    # Пытаемся получить посты из кэша
+    cached_posts = await get_posts_from_cache()
+    if cached_posts:
+        # Если кэш найден, применяем пагинацию
+        end = min(skip + limit, len(cached_posts))
+        return cached_posts[skip:end]
+    
+    # Если кэш не найден, получаем данные из БД
     crud = PostCRUD(db)
-    return await crud.get_all_posts(skip=skip, limit=limit)
+    posts = await crud.get_all_posts(skip=0, limit=1000)  # Получаем больше постов для кэширования
+    
+    # Кэшируем все посты
+    posts_data = [post.__dict__ for post in posts]
+    for i, post in enumerate(posts_data):
+        # Удаляем непреобразуемые в JSON атрибуты
+        if "_sa_instance_state" in post:
+            del post["_sa_instance_state"]
+        # Обрабатываем вложенные объекты
+        posts_data[i] = json.loads(json.dumps(post, default=lambda o: o.__dict__ if hasattr(o, "__dict__") else str(o)))
+    
+    await set_posts_in_cache(posts_data)
+    
+    # Возвращаем запрошенное подмножество постов
+    end = min(skip + limit, len(posts))
+    return posts[skip:end]
 
 @router.get("/users/{author_id}/posts/", response_model=List[PostResponse])
 async def get_user_posts(author_id: int, skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
@@ -58,6 +124,8 @@ async def update_post(post_id: int, post_update: PostUpdate, author_id: int, db:
         content=post_update.content,
         images=post_update.images
     )
+    # Инвалидируем кэш при обновлении поста
+    await invalidate_posts_cache()
     return updated_post
 
 @router.delete("/posts/{post_id}")
@@ -80,6 +148,9 @@ async def delete_post(post_id: int, admin_id: str, db: AsyncSession = Depends(ge
     success = await crud.delete_post(post_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete post")
+    
+    # Инвалидируем кэш при удалении поста
+    await invalidate_posts_cache()
     return {"message": "Post deleted successfully"}
 
 
@@ -97,6 +168,9 @@ async def create_comment(
     )
     if not new_comment:
         raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Инвалидируем кэш при добавлении комментария
+    await invalidate_posts_cache()
     return new_comment
 
 @router.get("/posts/{post_id}/comments/", response_model=List[CommentResponse])
@@ -127,6 +201,9 @@ async def update_comment(
         comment_id=comment_id,
         content=comment_update.content
     )
+    
+    # Инвалидируем кэш при обновлении комментария
+    await invalidate_posts_cache()
     return updated_comment
 
 @router.delete("/comments/{comment_id}")
@@ -144,6 +221,9 @@ async def delete_comment(
     success = await crud.delete_comment(comment_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete comment")
+    
+    # Инвалидируем кэш при удалении комментария
+    await invalidate_posts_cache()
     return {"message": "Comment deleted successfully"}
 
 
@@ -160,6 +240,9 @@ async def add_like(
     )
     if not new_like:
         raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Инвалидируем кэш при добавлении лайка
+    await invalidate_posts_cache()
     return new_like
 
 @router.delete("/posts/{post_id}/likes/{user_id}")
@@ -172,4 +255,7 @@ async def remove_like(
     success = await crud.remove_like(post_id=post_id, user_id=user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Like not found")
+    
+    # Инвалидируем кэш при удалении лайка
+    await invalidate_posts_cache()
     return {"message": "Like removed successfully"}
