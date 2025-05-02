@@ -4,11 +4,10 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class NewsCategory(str, Enum):
-    MAIN = "news"  # Основные новости
-    GUIDES = "guides"  # Гайды
-    EVENTS = "events"  # События
-    FISH_SPECIES = "fish_species"  # Виды рыб
-    # В будущем можно добавить другие категории
+    MAIN = "news"  
+    GUIDES = "guides"  
+    EVENTS = "events"  
+    FISH_SPECIES = "fish_species"  
 
 class NewsContentType(str, Enum):
     TEXT = "text"
@@ -17,8 +16,8 @@ class NewsContentType(str, Enum):
 
 class NewsContent(BaseModel):
     type: NewsContentType
-    content: str  # Текст или URL для медиа
-    order: int  # Порядок отображения
+    content: str  
+    order: int  
 
 class NewsBase(BaseModel):
     title: str
@@ -35,7 +34,7 @@ class News(NewsBase):
     id: int
     created_at: datetime
     updated_at: datetime
-    author_id: int  # ID администратора
+    author_id: int 
 
     class Config:
         from_attributes = True 

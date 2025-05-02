@@ -14,7 +14,7 @@ import requests
 
 router = APIRouter()
 
-# Эндпоинты для постов
+
 @router.post("/posts/", response_model=PostResponse)
 async def create_post(post: PostCreate, db: AsyncSession = Depends(get_db)):
     crud = PostCRUD(db)
@@ -82,7 +82,7 @@ async def delete_post(post_id: int, admin_id: str, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=500, detail="Failed to delete post")
     return {"message": "Post deleted successfully"}
 
-# Эндпоинты для комментариев
+
 @router.post("/posts/{post_id}/comments/", response_model=CommentResponse)
 async def create_comment(
     post_id: int,
@@ -146,7 +146,7 @@ async def delete_comment(
         raise HTTPException(status_code=500, detail="Failed to delete comment")
     return {"message": "Comment deleted successfully"}
 
-# Эндпоинты для лайков
+
 @router.post("/posts/{post_id}/likes/", response_model=LikeResponse)
 async def add_like(
     post_id: int,

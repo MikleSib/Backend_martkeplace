@@ -182,6 +182,29 @@ services:
       timeout: 10s
       retries: 3
 
+  mail_service:
+    build:
+      context: ./backend/services/mail_service
+      dockerfile: Dockerfile
+    ports:
+      - "8008:8008"
+    environment:
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_USE_TLS: ${SMTP_USE_TLS}
+      SMTP_USE_SSL: ${SMTP_USE_SSL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      AUTH_SERVICE_URL: http://auth_service:8001
+    depends_on:
+      - auth_service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   db_user_data:
   db_auth_data:

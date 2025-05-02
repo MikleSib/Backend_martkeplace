@@ -73,13 +73,12 @@ class PostCRUD:
             if author_info:
                 post.author_info = author_info
                 
-            # Получаем информацию об авторах комментариев
+            
             for comment in post.comments:
                 author_info = await self.get_user_info(comment.author_id)
                 if author_info:
                     comment.author_info = author_info
                     
-            # Получаем информацию о пользователях в лайках
             for like in post.likes:
                 user_info = await self.get_user_info(like.user_id)
                 if user_info:
@@ -133,19 +132,17 @@ class PostCRUD:
         )
         posts = result.scalars().all()
         
-        # Получаем информацию об авторах
         for post in posts:
             author_info = await self.get_user_info(post.author_id)
             if author_info:
                 post.author_info = author_info
                 
-            # Получаем информацию о пользователях в комментариях
+            
             for comment in post.comments:
                 author_info = await self.get_user_info(comment.author_id)
                 if author_info:
                     comment.author_info = author_info
                     
-            # Получаем информацию о пользователях в лайках
             for like in post.likes:
                 user_info = await self.get_user_info(like.user_id)
                 if user_info:
@@ -164,11 +161,9 @@ class PostCRUD:
             post.content = content
 
         if images is not None:
-            # Удаляем старые изображения
             await self.session.execute(
                 delete(PostImage).where(PostImage.post_id == post_id)
             )
-            # Добавляем новые изображения
             for image in images:
                 post_image = PostImage(
                     post_id=post.id,
@@ -189,7 +184,6 @@ class PostCRUD:
         await self.session.commit()
         return True
 
-    # Методы для работы с комментариями
     async def create_comment(self, post_id: int, content: str, author_id: int) -> Optional[Comment]:
         post = await self.get_post(post_id)
         if not post:
@@ -204,7 +198,6 @@ class PostCRUD:
         await self.session.commit()
         await self.session.refresh(comment)
         
-        # Получаем информацию об авторе комментария
         author_info = await self.get_user_info(comment.author_id)
         if author_info:
             comment.author_info = author_info
@@ -221,7 +214,6 @@ class PostCRUD:
         )
         comments = result.scalars().all()
         
-        # Получаем информацию об авторах комментариев
         for comment in comments:
             author_info = await self.get_user_info(comment.author_id)
             if author_info:
@@ -262,13 +254,11 @@ class PostCRUD:
         await self.session.commit()
         return True
 
-    # Методы для работы с лайками
     async def add_like(self, post_id: int, user_id: int) -> Optional[Like]:
         post = await self.get_post(post_id)
         if not post:
             return None
 
-        # Проверяем, не лайкнул ли уже пользователь
         result = await self.session.execute(
             select(Like)
             .where(Like.post_id == post_id)
@@ -286,7 +276,7 @@ class PostCRUD:
         await self.session.commit()
         await self.session.refresh(like)
         
-        # Получаем информацию о пользователе
+
         user_info = await self.get_user_info(like.user_id)
         if user_info:
             like.user_info = user_info

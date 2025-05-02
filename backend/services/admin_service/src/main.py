@@ -12,14 +12,13 @@ app = FastAPI(
 
 security = HTTPBearer()
 
-# Настройка логирования
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# URLs сервисов
 AUTH_SERVICE_URL = "http://auth_service:8001"
 USER_SERVICE_URL = "http://user_service:8002"
 POST_SERVICE_URL = "http://post_service:8004"
@@ -46,7 +45,7 @@ async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(secur
 async def health_check():
     return {"status": "healthy"}
 
-# Управление постами
+
 @app.delete("/posts/{post_id}")
 async def delete_post(post_id: int, admin_id: int = Depends(verify_admin)):
     try:
@@ -61,7 +60,7 @@ async def delete_post(post_id: int, admin_id: int = Depends(verify_admin)):
         logger.error(f"Error deleting post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Управление комментариями
+
 @app.delete("/comments/{comment_id}")
 async def delete_comment(comment_id: int, admin_id: int = Depends(verify_admin)):
     try:
@@ -76,7 +75,7 @@ async def delete_comment(comment_id: int, admin_id: int = Depends(verify_admin))
         logger.error(f"Error deleting comment {comment_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Управление новостями
+
 @app.post("/news")
 async def create_news(news_data: dict, admin_id: int = Depends(verify_admin)):
     try:
@@ -121,7 +120,7 @@ async def delete_news(news_id: int, admin_id: int = Depends(verify_admin)):
         logger.error(f"Error deleting news {news_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Статистика
+
 @app.get("/stats/posts")
 async def get_posts_stats(admin_id: int = Depends(verify_admin)):
     try:

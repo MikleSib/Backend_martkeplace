@@ -3,7 +3,7 @@ from .db import engine
 
 async def create_tables():
     async with engine.begin() as conn:
-        # Создаем таблицу постов
+
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS posts (
                 id SERIAL PRIMARY KEY,
@@ -15,7 +15,7 @@ async def create_tables():
             );
         """))
 
-        # Создаем таблицу изображений постов
+
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS post_images (
                 id SERIAL PRIMARY KEY,
@@ -25,7 +25,7 @@ async def create_tables():
             );
         """))
 
-        # Создаем таблицу комментариев
+
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS comments (
                 id SERIAL PRIMARY KEY,
@@ -37,7 +37,7 @@ async def create_tables():
             );
         """))
 
-        # Создаем таблицу лайков
+
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS likes (
                 id SERIAL PRIMARY KEY,

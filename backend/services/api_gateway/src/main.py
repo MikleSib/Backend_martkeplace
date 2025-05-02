@@ -58,7 +58,6 @@ def get_from_cache(key):
     return None
 
 def set_to_cache(key, value, expire=300):
-    # Если это пост и в нем есть комментарии, устанавливаем меньшее время жизни кеша
     if key.startswith("post_") and value and "comments" in value and value["comments"]:
         expire = 10
     requests.post(f"{REDIS_SERVICE_URL}/set", json={"key": key, "value": value, "expire": expire})
@@ -111,7 +110,7 @@ async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(secur
         if not user_data.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Not authorized as admin")
             
-        return credentials.credentials  # Возвращаем сам токен
+        return credentials.credentials  
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -226,7 +225,7 @@ async def create_post(
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # Проверяем токен и получаем ID пользователя
+        
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -280,7 +279,7 @@ async def get_post(post_id: int):
         
         post_data = response.json()
         
-        # Добавляем информацию об авторе
+        
         if "author" not in post_data and "author_id" in post_data:
             try:
                 author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post_data['author_id']}")
@@ -302,7 +301,7 @@ async def get_post(post_id: int):
                     "about_me": None
                 }
         
-        # Добавляем информацию о пользователях для лайков
+        
         if 'likes' in post_data and post_data['likes']:
             for like in post_data['likes']:
                 if 'user_id' in like and not 'user' in like:
@@ -326,7 +325,6 @@ async def get_post(post_id: int):
                             "about_me": None
                         }
         
-        # Добавляем информацию об авторах для комментариев
         if 'comments' in post_data and post_data['comments']:
             for comment in post_data['comments']:
                 if 'author_id' in comment and not 'author' in comment:
@@ -370,7 +368,6 @@ async def get_all_posts(skip: int = 0, limit: int = 100):
         posts = response.json()
         
         for post in posts:
-            # Добавляем информацию об авторе
             if "author" not in post and "author_id" in post:
                 try:
                     author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post['author_id']}")
@@ -393,7 +390,6 @@ async def get_all_posts(skip: int = 0, limit: int = 100):
                         "about_me": None
                     }
             
-            # Добавляем информацию о пользователях для лайков
             if 'likes' in post and post['likes']:
                 for like in post['likes']:
                     if 'user_id' in like and not 'user' in like:
@@ -417,7 +413,6 @@ async def get_all_posts(skip: int = 0, limit: int = 100):
                                 "about_me": None
                             }
             
-            # Добавляем информацию об авторах для комментариев
             if 'comments' in post and post['comments']:
                 for comment in post['comments']:
                     if 'author_id' in comment and not 'author' in comment:
@@ -497,7 +492,6 @@ async def create_comment(
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # Проверяем токен и получаем ID пользователя
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -541,7 +535,6 @@ async def get_post_comments(post_id: int, skip: int = 0, limit: int = 100, user_
         
         comments = response.json()
         
-        # Добавляем информацию об авторах для комментариев
         for comment in comments:
             if 'author_id' in comment and not 'author' in comment:
                 try:
@@ -616,7 +609,6 @@ async def admin_delete_comment(comment_id: int, credentials: HTTPAuthorizationCr
         if not admin_id:
             raise HTTPException(status_code=401, detail="Invalid token data")
             
-        # Проверяем права администратора
         if not user_info.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Only administrators can delete comments")
         
@@ -637,7 +629,6 @@ async def add_like(post_id: int, credentials: HTTPAuthorizationCredentials = Dep
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # Проверяем токен и получаем ID пользователя
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -672,7 +663,6 @@ async def remove_like(post_id: int, credentials: HTTPAuthorizationCredentials = 
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # Проверяем токен и получаем ID пользователя
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -766,7 +756,6 @@ async def create_news(
         raise HTTPException(status_code=503, detail="News service is not running")
     
     try:
-        # Проверяем токен и получаем ID пользователя и права администратора
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -780,7 +769,6 @@ async def create_news(
         if not user_info:
             raise HTTPException(status_code=401, detail="Invalid token")
         
-        # Проверяем права администратора
         if not user_info.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Only administrators can create news")
             
@@ -879,7 +867,6 @@ async def upload_file(
         raise HTTPException(status_code=503, detail="File service is not running")
     
     try:
-        # Проверяем токен
         user_response = requests.get(
             f"{AUTH_SERVICE_URL}/auth/check_token",
             params={"token": credentials.credentials}
@@ -893,11 +880,9 @@ async def upload_file(
         if not user_info:
             raise HTTPException(status_code=401, detail="Invalid token")
             
-        # Проверяем тип файла
         if not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="Only image files are allowed")
             
-        # Отправляем файл в file_service
         files = {"file": (file.filename, file.file, file.content_type)}
         response = requests.post(f"{FILE_SERVICE_URL}/upload", files=files)
         

@@ -13,14 +13,14 @@ router = APIRouter()
 @router.post("/user/profile")
 async def create_profile(profile_data: ProfileCreate, db: AsyncSession = Depends(get_db)):
     try:
-        # Проверяем существование профиля
+        
         result = await db.execute(
             select(UserProfile).where(UserProfile.user_id == profile_data.user_id)
         )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Profile already exists")
         
-        # Создаем профиль
+        
         profile = UserProfile(
             user_id=profile_data.user_id,
             username=profile_data.username,

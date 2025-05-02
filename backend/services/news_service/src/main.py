@@ -12,10 +12,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Инициализация базы данных при запуске
+
 init_db()
 
-# Dependency
 def get_db():
     db = database.SessionLocal()
     try:
@@ -74,14 +73,12 @@ def update_news(
     if db_news.author_id != author_id:
         raise HTTPException(status_code=403, detail="Not authorized to update this news")
 
-    # Обновляем основные поля
     for key, value in news_update.dict(exclude={'contents'}).items():
         setattr(db_news, key, value)
 
-    # Удаляем старые контенты
+    
     db.query(schemas.NewsContentDB).filter(schemas.NewsContentDB.news_id == news_id).delete()
 
-    # Добавляем новые контенты
     for content in news_update.contents:
         db_content = schemas.NewsContentDB(
             news_id=news_id,
@@ -117,18 +114,15 @@ def get_news_categories_stats(db: Session = Depends(get_db)):
     Получить количество новостей в каждой категории
     """
     try:
-        # Получаем статистику по категориям
         stats = db.query(
             schemas.NewsDB.category,
             func.count(schemas.NewsDB.id).label('count')
         ).group_by(schemas.NewsDB.category).all()
         
-        # Преобразуем результат в словарь
-        result = {category.value: 0 for category in models.NewsCategory}  # Инициализируем все категории нулями
+        result = {category.value: 0 for category in models.NewsCategory} 
         for category, count in stats:
             result[category] = count
             
         return result
     except Exception as e:
-        logger.error(f"Error getting news categories stats: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error") 

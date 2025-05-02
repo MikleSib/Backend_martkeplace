@@ -10,17 +10,17 @@ class Post(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
-    content = Column(Text, nullable=False)  # HTML контент с форматированием
+    content = Column(Text, nullable=False) 
     author_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Отношения
+
     images = relationship("PostImage", back_populates="post")
     comments = relationship("Comment", back_populates="post")
     likes = relationship("Like", back_populates="post")
     
-    # Дополнительные поля для информации о пользователях
+
     author_info = None
 
     def __repr__(self):
@@ -48,7 +48,7 @@ class Comment(Base):
     
     post = relationship("Post", back_populates="comments")
     
-    # Дополнительные поля для информации о пользователях
+
     author_info = None
 
 class Like(Base):
@@ -61,5 +61,5 @@ class Like(Base):
     
     post = relationship("Post", back_populates="likes")
     
-    # Дополнительные поля для информации о пользователях
+
     user_info = None 
