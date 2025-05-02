@@ -14,6 +14,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     full_name: str
     about_me: Optional[str] = None
+    is_email_verified: Optional[bool] = False
 
 class UserLogin(BaseModel):
     username: str

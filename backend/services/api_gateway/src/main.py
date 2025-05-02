@@ -9,6 +9,8 @@ from fastapi.responses import StreamingResponse
 import io
 from pydantic import BaseModel
 from typing import List
+from pydantic import EmailStr
+import random
 
 app = FastAPI(
     title="API Gateway",
@@ -41,6 +43,7 @@ REDIS_SERVICE_URL = "http://redis_service:8003"
 POST_SERVICE_URL = "http://post_service:8004"
 FILE_SERVICE_URL = "http://file_service:8005"
 NEWS_SERVICE_URL = "http://news_service:8006"
+MAIL_SERVICE_URL = "http://mail_service:8008"
 
 SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
@@ -48,7 +51,8 @@ SERVICE_URLS = {
     "redis": REDIS_SERVICE_URL,
     "post": POST_SERVICE_URL,
     "file": FILE_SERVICE_URL,
-    "news": NEWS_SERVICE_URL
+    "news": NEWS_SERVICE_URL,
+    "mail": MAIL_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -134,6 +138,9 @@ async def register(user_data: UserRegister):
     try:
         logger.info(f"Starting user registration for username: {user_data.username}")
         
+        # Регистрируем пользователя с неподтвержденным email
+        user_data.is_email_verified = False
+        
         response = requests.post(
             f"{AUTH_SERVICE_URL}/auth/register",
             json=user_data.dict()
@@ -147,7 +154,18 @@ async def register(user_data: UserRegister):
         user_info = response.json()
         logger.info(f"User created successfully with ID: {user_info.get('id')}")
         
-        return user_info
+        # Отправляем код подтверждения на email
+        verification_result = await send_verification_code(user_data.email)
+        
+        # Возвращаем информацию о созданном пользователе и о необходимости подтверждения email
+        return {
+            **user_info,
+            "email_verification": {
+                "required": True,
+                "email": user_data.email,
+                "expires_in": verification_result.get("expires_in", 900)
+            }
+        }
     except ValueError as e:
         logger.error(f"Invalid JSON format: {str(e)}")
         return {
@@ -165,7 +183,79 @@ async def login(user_data: UserLogin):
         response = requests.post(f"{AUTH_SERVICE_URL}/auth/login", json=user_data.dict())
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Login failed"))
-        return response.json()
+        
+        user_info = response.json()
+        
+        # Проверяем, подтвержден ли email
+        is_verified = user_info.get("is_email_verified", False)
+        
+        user_email = user_info.get("email")
+        if not user_email and "user" in user_info and user_info["user"].get("email"):
+            user_email = user_info["user"].get("email")
+        
+        if not user_email:
+            # Получаем email пользователя из базы данных, если его нет в ответе
+            logger.info(f"Получение email для пользователя {user_info.get('username')}")
+            user_id = user_info.get("id")
+            if "user" in user_info and user_info["user"].get("id"):
+                user_id = user_info["user"].get("id")
+                
+            if user_id:
+                email_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+                
+                if email_response.status_code == 200:
+                    user_email = email_response.json().get("email")
+                
+        if user_email:
+            # Проверяем верификацию в Redis (временное решение)
+            verified_key = f"email_verified_{user_email}"
+            verification_response = requests.get(f"{REDIS_SERVICE_URL}/get/{verified_key}")
+            logger.info(f"Проверка верификации в Redis: {verified_key}, ответ: {verification_response.status_code}, значение: {verification_response.text}")
+            
+            if verification_response.status_code == 200:
+                try:
+                    redis_value = verification_response.json()
+                    if redis_value == "true" or redis_value == True:
+                        # Если в Redis отмечено, что email верифицирован
+                        is_verified = True
+                        # Обновим is_email_verified в user_info
+                        if "user" in user_info:
+                            user_info["user"]["is_email_verified"] = True
+                        else:
+                            user_info["is_email_verified"] = True
+                        logger.info(f"Email {user_email} подтвержден (из Redis)")
+                except Exception as e:
+                    logger.error(f"Ошибка при проверке ключа в Redis: {str(e)}")
+        
+        if not is_verified and user_email:
+            # Если email не подтвержден, отправляем новый код 
+            logger.info(f"Login attempt for user with unverified email: {user_email}")
+            
+            # Отправляем новый код подтверждения
+            verification_result = await send_verification_code(user_email)
+            
+            return {
+                **user_info,
+                "email_verification": {
+                    "required": True,
+                    "message": "Email не подтвержден. Новый код был отправлен на вашу почту.",
+                    "email": user_email,
+                    "expires_in": verification_result.get("expires_in", 900)
+                }
+            }
+        elif not user_email:
+            # Если email всё ещё не найден, вернём ошибку
+            logger.error("Не удалось получить email пользователя")
+            return {
+                **user_info,
+                "email_verification": {
+                    "required": True,
+                    "message": "Email не подтвержден, но не удалось отправить код.",
+                    "error": "Не найден email пользователя"
+                }
+            }
+        
+        return user_info
     except ValueError as e:
         return {"error": "Invalid JSON format"}
     except Exception as e:
@@ -929,6 +1019,149 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/test")
+async def test(to_email: EmailStr):
+    """
+    Простой тестовый эндпоинт для отправки письма
+    """
+    try:
+        logger.info(f"Отправка тестового письма на {to_email}")
+        
+        # Отправляем запрос к mail_service
+        response = requests.post(
+            f"{MAIL_SERVICE_URL}/test",
+            json={"to_email": to_email}
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Ошибка отправки тестового письма: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code, 
+                detail=f"Ошибка отправки письма: {response.json().get('detail', 'Unknown error')}"
+            )
+        
+        return {
+            "status": "success",
+            "message": "Тестовое письмо успешно отправлено"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Ошибка при тестировании почтового сервиса: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при тестировании почтового сервиса: {str(e)}")
+
+@app.post("/auth/send-verification")
+async def send_verification_code(to_email: EmailStr):
+    """
+    Отправляет код подтверждения на указанную почту
+    """
+    try:
+        # Генерируем 6-значный код
+        verification_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        logger.info(f"Отправка кода подтверждения на {to_email}, код: {verification_code}")
+        
+        # Отправляем запрос к mail_service
+        response = requests.post(
+            f"{MAIL_SERVICE_URL}/send-verification",
+            json={"to_email": to_email, "code": verification_code}
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Ошибка отправки кода подтверждения: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code, 
+                detail=f"Ошибка отправки кода: {response.json().get('detail', 'Unknown error')}"
+            )
+        
+        # Сохраняем код в кэш с временем жизни 15 минут
+        verification_key = f"verification_code_{to_email}"
+        requests.post(
+            f"{REDIS_SERVICE_URL}/set",
+            json={"key": verification_key, "value": verification_code, "expire": 900}  # 15 минут = 900 секунд
+        )
+        
+        return {
+            "status": "success",
+            "message": "Код подтверждения отправлен",
+            "expires_in": 900  # 15 минут в секундах
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Ошибка при отправке кода подтверждения: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при отправке кода подтверждения: {str(e)}")
+
+@app.post("/auth/verify-email")
+async def verify_email(to_email: EmailStr, code: str):
+    """
+    Проверяет код подтверждения email и обновляет статус верификации пользователя
+    """
+    try:
+        # Получаем код из кэша
+        verification_key = f"verification_code_{to_email}"
+        response = requests.get(f"{REDIS_SERVICE_URL}/get/{verification_key}")
+        
+        if response.status_code != 200 or not response.json():
+            logger.warning(f"Код для {to_email} не найден или истек срок его действия")
+            
+            # Генерируем новый код и отправляем его
+            verification_result = await send_verification_code(to_email)
+            return {
+                "status": "error",
+                "verified": False,
+                "message": "Срок действия кода истек. Отправлен новый код.",
+                "expires_in": verification_result.get("expires_in", 900)
+            }
+            
+        saved_code = response.json()
+        
+        if saved_code != code:
+            logger.warning(f"Неверный код для {to_email}: ожидался {saved_code}, получен {code}")
+            return {
+                "status": "error",
+                "verified": False,
+                "message": "Неверный код подтверждения"
+            }
+        
+        # Код верный, отмечаем email как подтвержденный
+        # Удаляем код из кэша, так как он больше не нужен
+        delete_response = requests.delete(f"{REDIS_SERVICE_URL}/delete/{verification_key}")
+        logger.info(f"Удаление ключа верификации: {verification_key}, статус: {delete_response.status_code}")
+        
+        # ВРЕМЕННОЕ РЕШЕНИЕ: Поскольку эндпоинт /auth/verify-email еще не реализован,
+        # мы просто отмечаем в Redis, что email подтвержден
+        verified_key = f"email_verified_{to_email}"
+        set_response = requests.post(
+            f"{REDIS_SERVICE_URL}/set",
+            json={"key": verified_key, "value": "true", "expire": 31536000}  # 1 год
+        )
+        logger.info(f"Установка ключа верификации: {verified_key}, статус: {set_response.status_code}")
+        
+        # Находим пользователя по email, чтобы вернуть его данные
+        # В будущем заменить на вызов auth_service, когда эндпоинт будет готов
+        try:
+            # Поиск пользователя по email
+            user_info = {"email": to_email, "is_email_verified": True}
+            
+            return {
+                "status": "success",
+                "verified": True,
+                "message": "Email успешно подтвержден",
+                "user": user_info
+            }
+        except Exception as e:
+            logger.error(f"Ошибка при поиске пользователя: {str(e)}")
+            return {
+                "status": "success",
+                "verified": True,
+                "message": "Email успешно подтвержден, но информация о пользователе недоступна",
+            }
+            
+    except Exception as e:
+        logger.error(f"Ошибка при проверке кода подтверждения: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при проверке кода подтверждения: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
