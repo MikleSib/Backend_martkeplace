@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from typing import List
 from pydantic import EmailStr
 import random
+import aiohttp
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 app = FastAPI(
     title="API Gateway",
@@ -44,6 +46,7 @@ POST_SERVICE_URL = "http://post_service:8004"
 FILE_SERVICE_URL = "http://file_service:8005"
 NEWS_SERVICE_URL = "http://news_service:8006"
 MAIL_SERVICE_URL = "http://mail_service:8008"
+FORUM_SERVICE_URL = "http://forum_service:8009"
 
 SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
@@ -52,7 +55,8 @@ SERVICE_URLS = {
     "post": POST_SERVICE_URL,
     "file": FILE_SERVICE_URL,
     "news": NEWS_SERVICE_URL,
-    "mail": MAIL_SERVICE_URL
+    "mail": MAIL_SERVICE_URL,
+    "forum": FORUM_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -817,13 +821,15 @@ async def get_file(filename: str):
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail="File not found")
         
+        # Корректная передача бинарных данных как поток
         return StreamingResponse(
             io.BytesIO(response.content),
-            media_type=response.headers.get("content-type", "application/octet-stream")
+            media_type=response.headers.get("content-type", "application/octet-stream"),
+            headers={"Content-Disposition": f"inline; filename={filename}"}
         )
     except Exception as e:
         logger.error(f"Error getting file: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error getting file")
+        raise HTTPException(status_code=500, detail=f"Error getting file: {str(e)}")
 
 @app.get("/news/")
 async def get_news(skip: int = 0, limit: int = 100, category: str = None):
@@ -1002,23 +1008,39 @@ async def upload_file(
             
         if not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="Only image files are allowed")
-            
+        
+        # Проверка размера файла
+        MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+        file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413, 
+                detail=f"File size exceeds the limit of {MAX_FILE_SIZE/1024/1024}MB"
+            )
+        
+        # Перематываем файл обратно на начало
+        await file.seek(0)
+        
+        # Передаем файл напрямую
         files = {"file": (file.filename, file.file, file.content_type)}
         response = requests.post(f"{FILE_SERVICE_URL}/upload", files=files)
         
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Error uploading file")
+        if response.status_code != 200 and response.status_code != 201:
+            error_message = "Error uploading file"
+            try:
+                error_data = response.json()
+                if "detail" in error_data:
+                    error_message = error_data["detail"]
+            except:
+                pass
+            raise HTTPException(status_code=response.status_code, detail=error_message)
             
-        file_info = response.json()
-        return {
-            "url": f"/files/{file_info['filename']}",
-            "filename": file_info['filename'],
-            "size": file_info['size'],
-            "content_type": file_info['content_type']
-        }
+        return response.json()
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
 @app.post("/test")
 async def test(to_email: EmailStr):
@@ -1163,5 +1185,488 @@ async def verify_email(to_email: EmailStr, code: str):
         logger.error(f"Ошибка при проверке кода подтверждения: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при проверке кода подтверждения: {str(e)}")
 
+# ФОРУМ ЭНДПОИНТЫ
+# Категории форума
+@app.get("/forum/categories")
+async def get_forum_categories():
+    """Получение списка всех корневых категорий форума"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.get(f"{FORUM_SERVICE_URL}/api/v1/categories")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении категорий форума")
+        )
+    
+    return response.json()
+
+@app.get("/forum/categories/{category_id}")
+async def get_forum_category(category_id: int):
+    """Получение данных категории с подкатегориями"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.get(f"{FORUM_SERVICE_URL}/api/v1/categories/{category_id}")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении категории форума")
+        )
+    
+    return response.json()
+
+@app.post("/forum/categories")
+async def create_forum_category(category_data: dict, token: str = Depends(verify_admin)):
+    """Создание новой категории форума (только для администраторов)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/categories",
+        headers={"Authorization": f"Bearer {token}"},
+        json=category_data
+    )
+    
+    if response.status_code != 201:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при создании категории форума")
+        )
+    
+    return response.json()
+
+@app.put("/forum/categories/{category_id}")
+async def update_forum_category(category_id: int, category_data: dict, token: str = Depends(verify_admin)):
+    """Обновление категории форума (только для администраторов)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.put(
+        f"{FORUM_SERVICE_URL}/api/v1/categories/{category_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json=category_data
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при обновлении категории форума")
+        )
+    
+    return response.json()
+
+@app.delete("/forum/categories/{category_id}")
+async def delete_forum_category(category_id: int, token: str = Depends(verify_admin)):
+    """Удаление категории форума (только для администраторов)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.delete(
+        f"{FORUM_SERVICE_URL}/api/v1/categories/{category_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    
+    if response.status_code != 204:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при удалении категории форума")
+        )
+    
+    return {"message": "Категория успешно удалена"}
+
+# Темы форума
+@app.get("/forum/topics")
+async def get_forum_topics(
+    category_id: int = None, 
+    author_id: int = None, 
+    pinned: bool = None,
+    page: int = 1,
+    page_size: int = 20
+):
+    """Получение списка тем с пагинацией и фильтрацией"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    params = {
+        "page": page,
+        "page_size": page_size
+    }
+    
+    if category_id is not None:
+        params["category_id"] = category_id
+    if author_id is not None:
+        params["author_id"] = author_id
+    if pinned is not None:
+        params["pinned"] = pinned
+    
+    response = requests.get(
+        f"{FORUM_SERVICE_URL}/api/v1/topics",
+        params=params
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении списка тем форума")
+        )
+    
+    return response.json()
+
+@app.get("/forum/topics/{topic_id}")
+async def get_forum_topic(topic_id: int):
+    """Получение детальной информации о теме"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.get(f"{FORUM_SERVICE_URL}/api/v1/topics/{topic_id}")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении темы форума")
+        )
+    
+    return response.json()
+
+@app.post("/forum/topics")
+async def create_forum_topic(topic_data: dict, user_id: int = Depends(verify_token)):
+    """Создание новой темы с первым сообщением"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/topics",
+        headers={"Authorization": f"Bearer {user_id}"},
+        json=topic_data
+    )
+    
+    if response.status_code != 201:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при создании темы форума")
+        )
+    
+    return response.json()
+
+@app.put("/forum/topics/{topic_id}")
+async def update_forum_topic(topic_id: int, topic_data: dict, user_id: int = Depends(verify_token)):
+    """Обновление темы (владельцем или модератором)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.put(
+        f"{FORUM_SERVICE_URL}/api/v1/topics/{topic_id}",
+        headers={"Authorization": f"Bearer {user_id}"},
+        json=topic_data
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при обновлении темы форума")
+        )
+    
+    return response.json()
+
+@app.delete("/forum/topics/{topic_id}")
+async def delete_forum_topic(topic_id: int, user_id: int = Depends(verify_token)):
+    """Удаление темы (владельцем или модератором)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.delete(
+        f"{FORUM_SERVICE_URL}/api/v1/topics/{topic_id}",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 204:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при удалении темы форума")
+        )
+    
+    return {"message": "Тема успешно удалена"}
+
+@app.put("/forum/topics/{topic_id}/pin")
+async def pin_forum_topic(topic_id: int, user_id: int = Depends(verify_token)):
+    """Закрепление/открепление темы (только для модераторов)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.put(
+        f"{FORUM_SERVICE_URL}/api/v1/topics/{topic_id}/pin",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при закреплении/откреплении темы форума")
+        )
+    
+    return response.json()
+
+@app.put("/forum/topics/{topic_id}/close")
+async def close_forum_topic(topic_id: int, user_id: int = Depends(verify_token)):
+    """Закрытие/открытие темы (только для модераторов)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.put(
+        f"{FORUM_SERVICE_URL}/api/v1/topics/{topic_id}/close",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при закрытии/открытии темы форума")
+        )
+    
+    return response.json()
+
+# Сообщения форума
+@app.get("/forum/posts")
+async def get_forum_posts(
+    topic_id: int,
+    page: int = 1, 
+    page_size: int = 20
+):
+    """Получение списка сообщений в теме с пагинацией"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    params = {
+        "topic_id": topic_id,
+        "page": page,
+        "page_size": page_size
+    }
+    
+    response = requests.get(
+        f"{FORUM_SERVICE_URL}/api/v1/posts",
+        params=params
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении списка сообщений форума")
+        )
+    
+    return response.json()
+
+@app.get("/forum/posts/{post_id}")
+async def get_forum_post(post_id: int):
+    """Получение подробной информации о сообщении"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.get(f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении сообщения форума")
+        )
+    
+    return response.json()
+
+@app.post("/forum/posts")
+async def create_forum_post(post_data: dict, user_id: int = Depends(verify_token)):
+    """Создание нового сообщения в теме"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/posts",
+        headers={"Authorization": f"Bearer {user_id}"},
+        json=post_data
+    )
+    
+    if response.status_code != 201:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при создании сообщения форума")
+        )
+    
+    return response.json()
+
+@app.put("/forum/posts/{post_id}")
+async def update_forum_post(post_id: int, post_data: dict, user_id: int = Depends(verify_token)):
+    """Обновление сообщения (владельцем или модератором)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.put(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}",
+        headers={"Authorization": f"Bearer {user_id}"},
+        json=post_data
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при обновлении сообщения форума")
+        )
+    
+    return response.json()
+
+@app.delete("/forum/posts/{post_id}")
+async def delete_forum_post(post_id: int, user_id: int = Depends(verify_token)):
+    """Удаление сообщения (владельцем или модератором)"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.delete(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 204:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при удалении сообщения форума")
+        )
+    
+    return {"message": "Сообщение успешно удалено"}
+
+@app.post("/forum/posts/{post_id}/like")
+async def like_forum_post(post_id: int, user_id: int = Depends(verify_token)):
+    """Лайк сообщения"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}/like",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при добавлении лайка")
+        )
+    
+    return response.json()
+
+@app.post("/forum/posts/{post_id}/dislike")
+async def dislike_forum_post(post_id: int, user_id: int = Depends(verify_token)):
+    """Дизлайк сообщения"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}/dislike",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при добавлении дизлайка")
+        )
+    
+    return response.json()
+
+@app.delete("/forum/posts/{post_id}/reactions")
+async def remove_forum_post_reaction(post_id: int, user_id: int = Depends(verify_token)):
+    """Удаление реакции пользователя на сообщение"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.delete(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}/reactions",
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при удалении реакции")
+        )
+    
+    return response.json()
+
+@app.get("/forum/active-topics")
+async def get_top_active_forum_topics(limit: int = 5):
+    """Получение тем с наибольшим количеством сообщений из любых категорий"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    response = requests.get(
+        f"{FORUM_SERVICE_URL}/api/v1/active-topics",
+        params={"limit": limit}
+    )
+    
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code, 
+            detail=response.json().get("detail", "Ошибка при получении активных тем форума")
+        )
+    
+    return response.json()
+
+@app.post("/forum/posts/upload_image")
+async def upload_forum_image(
+    file: UploadFile = File(...),
+    user_id: int = Depends(verify_token)
+):
+    """Загрузка изображения для сообщения форума"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/health"):
+        raise HTTPException(status_code=503, detail="Сервис форума недоступен")
+    
+    # Проверяем MIME тип файла
+    content_type = file.content_type.lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="Загружаемый файл должен быть изображением"
+        )
+    
+    try:
+        # Копируем содержимое файла во временный буфер для безопасной передачи
+        file_content = await file.read()
+        
+        # Используем requests-toolbelt для корректной отправки файлов
+        import io
+        
+        form_data = MultipartEncoder(
+            fields={
+                'file': (file.filename, io.BytesIO(file_content), file.content_type)
+            }
+        )
+        
+        response = requests.post(
+            f"{FORUM_SERVICE_URL}/api/v1/posts/upload_image",
+            headers={
+                "Authorization": f"Bearer {user_id}",
+                "Content-Type": form_data.content_type
+            },
+            data=form_data
+        )
+        
+        if response.status_code != 201:
+            error_message = "Ошибка при загрузке изображения"
+            try:
+                error_data = response.json()
+                if "detail" in error_data:
+                    error_message = error_data["detail"]
+            except Exception:
+                pass
+            
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_message
+            )
+        
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"Ошибка при загрузке изображения: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при загрузке изображения: {str(e)}"
+        )
+
+# Для запуска сервиса напрямую через Python
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
