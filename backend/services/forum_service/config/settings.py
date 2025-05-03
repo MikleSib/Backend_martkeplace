@@ -13,9 +13,10 @@ class Settings:
     
     # Подключения к другим сервисам
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "http://auth_service:8001")
-    USER_SERVICE_URL: str = os.getenv("USER_SERVICE_URL", "http://user_service:8002")
+    USER_SERVICE_URL: str = os.getenv("USER_SERVICE_URL", "http://user_service:8000/api/v1")
     REDIS_SERVICE_URL: str = os.getenv("REDIS_SERVICE_URL", "http://redis_service:8003")
-    FILE_SERVICE_URL: str = os.getenv("FILE_SERVICE_URL", "http://file_service:8005")
+    FILE_SERVICE_URL: str = os.getenv("FILE_SERVICE_URL", "http://file_service:8000/api/v1")
+    FORUM_URL: str = os.getenv("FORUM_URL", "http://localhost:8000/forum")
     
     # Настройки API
     API_PREFIX: str = "/api/v1"

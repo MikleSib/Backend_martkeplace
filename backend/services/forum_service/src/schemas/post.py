@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, validator
 
 class ImageCreate(BaseModel):
     """Схема для добавления изображения к сообщению"""
@@ -22,7 +22,11 @@ class PostCreate(PostBase):
 
 class PostUpdate(BaseModel):
     """Схема для обновления сообщения"""
-    content: Optional[str] = Field(None, min_length=1)
+    content: Optional[str] = None
+
+class PostReport(BaseModel):
+    """Схема для отправки жалобы на сообщение"""
+    reason: str = Field(..., description="Причина жалобы", min_length=3, max_length=500)
 
 class UserInfo(BaseModel):
     """Информация о пользователе"""

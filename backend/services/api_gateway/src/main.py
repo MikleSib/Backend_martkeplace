@@ -1587,6 +1587,18 @@ async def remove_forum_post_reaction(post_id: int, user_id: int = Depends(verify
     
     return response.json()
 
+@app.post("/forum/posts/{post_id}/report")
+async def report_forum_post(post_id: int, report_data: dict, user_id: int = Depends(verify_token)):
+    """Отправка жалобы на сообщение форума"""
+    if not check_route_enabled(f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}/report"):
+        return {"message": "forum service is not running"}
+    response = requests.post(
+        f"{FORUM_SERVICE_URL}/api/v1/posts/{post_id}/report",
+        json=report_data,
+        headers={"Authorization": f"Bearer {user_id}"}
+    )
+    return handle_service_response(response, "Failed to send report for forum post")
+
 @app.get("/forum/active-topics")
 async def get_top_active_forum_topics(limit: int = 5):
     """Получение тем с наибольшим количеством сообщений из любых категорий"""

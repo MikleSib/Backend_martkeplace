@@ -4,12 +4,12 @@ import os
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
 import httpx
-from sqlalchemy import desc, select, update
+from sqlalchemy import desc, select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import settings
 from database.database import get_db
-from database.models import Category, NotificationType, Post, ReferenceType, Topic, Image
+from database.models import Category, NotificationType, Post, ReferenceType, Topic, Image, PostReport
 from src.schemas.common import MessageResponse, PaginatedResponse
 from src.schemas.post import PostCreate, PostDetailResponse, PostResponse, PostUpdate, UserInfo
 from src.utils.auth import User, get_current_user
@@ -587,48 +587,63 @@ async def delete_post(
 
 @router.post("/{post_id}/like", response_model=MessageResponse)
 async def like_post(
-    post: Post = Depends(get_post_or_404),
+    post_id: int = Path(..., description="ID сообщения"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Лайк сообщения"""
-    # Проверяем, что пользователь еще не лайкал это сообщение
-    reaction_query = select(post.reactions).where(
-        post.reactions.any(user_id=current_user.id)
-    )
-    reaction = await db.scalar(reaction_query)
+    from database.models import Reaction, ReactionType, Post
+    from sqlalchemy import text
     
-    if reaction:
-        # Уже есть реакция, это обновление
-        if reaction.type == "like":
+    # Используем сырой SQL-запрос для проверки существования поста
+    post_check = await db.execute(
+        text("SELECT id, author_id, likes_count, dislikes_count FROM posts WHERE id = :post_id AND is_deleted = false"),
+        {"post_id": post_id}
+    )
+    post_data = post_check.fetchone()
+    
+    if not post_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено"
+        )
+    
+    # Проверяем существующие реакции через сырой SQL-запрос
+    reaction_check = await db.execute(
+        text("SELECT id, type FROM reactions WHERE post_id = :post_id AND user_id = :user_id"),
+        {"post_id": post_id, "user_id": current_user.id}
+    )
+    reaction_data = reaction_check.fetchone()
+    
+    if reaction_data:
+        # Уже есть реакция
+        if reaction_data.type == "LIKE":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Вы уже поставили лайк этому сообщению"
             )
         
-        # Меняем дизлайк на лайк
-        reaction.type = "like"
-        post.likes_count += 1
-        post.dislikes_count = max(0, post.dislikes_count - 1)
-    else:
-        # Создаем новую реакцию
-        from database.models import Reaction, ReactionType
-        
-        new_reaction = Reaction(
-            post_id=post.id,
-            user_id=current_user.id,
-            type=ReactionType.LIKE,
-            created_at=datetime.utcnow()
+        # Обновляем тип реакции и счетчики
+        await db.execute(
+            text("UPDATE reactions SET type = 'LIKE' WHERE id = :id"),
+            {"id": reaction_data.id}
         )
         
-        db.add(new_reaction)
-        post.likes_count += 1
-    
-    # Создаем уведомление о лайке, если автор - не текущий пользователь
-    if post.author_id != current_user.id:
-        # Здесь должен быть вызов сервиса уведомлений
-        # Это заглушка для примера
-        pass
+        await db.execute(
+            text("UPDATE posts SET likes_count = likes_count + 1, dislikes_count = GREATEST(0, dislikes_count - 1) WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
+    else:
+        # Создаем новую реакцию
+        await db.execute(
+            text("INSERT INTO reactions (post_id, user_id, type, created_at) VALUES (:post_id, :user_id, 'LIKE', NOW())"),
+            {"post_id": post_id, "user_id": current_user.id}
+        )
+        
+        await db.execute(
+            text("UPDATE posts SET likes_count = likes_count + 1 WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
     
     await db.commit()
     
@@ -636,42 +651,62 @@ async def like_post(
 
 @router.post("/{post_id}/dislike", response_model=MessageResponse)
 async def dislike_post(
-    post: Post = Depends(get_post_or_404),
+    post_id: int = Path(..., description="ID сообщения"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Дизлайк сообщения"""
-    # Проверяем, что пользователь еще не дизлайкал это сообщение
-    reaction_query = select(post.reactions).where(
-        post.reactions.any(user_id=current_user.id)
-    )
-    reaction = await db.scalar(reaction_query)
+    from sqlalchemy import text
     
-    if reaction:
-        # Уже есть реакция, это обновление
-        if reaction.type == "dislike":
+    # Используем сырой SQL-запрос для проверки существования поста
+    post_check = await db.execute(
+        text("SELECT id, author_id, likes_count, dislikes_count FROM posts WHERE id = :post_id AND is_deleted = false"),
+        {"post_id": post_id}
+    )
+    post_data = post_check.fetchone()
+    
+    if not post_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено"
+        )
+    
+    # Проверяем существующие реакции через сырой SQL-запрос
+    reaction_check = await db.execute(
+        text("SELECT id, type FROM reactions WHERE post_id = :post_id AND user_id = :user_id"),
+        {"post_id": post_id, "user_id": current_user.id}
+    )
+    reaction_data = reaction_check.fetchone()
+    
+    if reaction_data:
+        # Уже есть реакция
+        if reaction_data.type == "DISLIKE":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Вы уже поставили дизлайк этому сообщению"
             )
         
-        # Меняем лайк на дизлайк
-        reaction.type = "dislike"
-        post.dislikes_count += 1
-        post.likes_count = max(0, post.likes_count - 1)
-    else:
-        # Создаем новую реакцию
-        from database.models import Reaction, ReactionType
-        
-        new_reaction = Reaction(
-            post_id=post.id,
-            user_id=current_user.id,
-            type=ReactionType.DISLIKE,
-            created_at=datetime.utcnow()
+        # Обновляем тип реакции и счетчики
+        await db.execute(
+            text("UPDATE reactions SET type = 'DISLIKE' WHERE id = :id"),
+            {"id": reaction_data.id}
         )
         
-        db.add(new_reaction)
-        post.dislikes_count += 1
+        await db.execute(
+            text("UPDATE posts SET dislikes_count = dislikes_count + 1, likes_count = GREATEST(0, likes_count - 1) WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
+    else:
+        # Создаем новую реакцию
+        await db.execute(
+            text("INSERT INTO reactions (post_id, user_id, type, created_at) VALUES (:post_id, :user_id, 'DISLIKE', NOW())"),
+            {"post_id": post_id, "user_id": current_user.id}
+        )
+        
+        await db.execute(
+            text("UPDATE posts SET dislikes_count = dislikes_count + 1 WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
     
     await db.commit()
     
@@ -679,35 +714,163 @@ async def dislike_post(
 
 @router.delete("/{post_id}/reactions", response_model=MessageResponse)
 async def remove_reaction(
-    post: Post = Depends(get_post_or_404),
+    post_id: int = Path(..., description="ID сообщения"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Удаление реакции пользователя на сообщение"""
-    # Проверяем, есть ли реакция пользователя на это сообщение
-    from database.models import Reaction
+    from sqlalchemy import text
     
-    reaction_query = select(Reaction).where(
-        Reaction.post_id == post.id,
-        Reaction.user_id == current_user.id
+    # Используем сырой SQL-запрос для проверки существования поста
+    post_check = await db.execute(
+        text("SELECT id, author_id, likes_count, dislikes_count FROM posts WHERE id = :post_id AND is_deleted = false"),
+        {"post_id": post_id}
     )
+    post_data = post_check.fetchone()
     
-    reaction = await db.scalar(reaction_query)
+    if not post_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено"
+        )
     
-    if not reaction:
+    # Проверяем существующие реакции через сырой SQL-запрос
+    reaction_check = await db.execute(
+        text("SELECT id, type FROM reactions WHERE post_id = :post_id AND user_id = :user_id"),
+        {"post_id": post_id, "user_id": current_user.id}
+    )
+    reaction_data = reaction_check.fetchone()
+    
+    if not reaction_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Реакция не найдена"
         )
     
     # Обновляем счетчики в зависимости от типа реакции
-    if reaction.type == "like":
-        post.likes_count = max(0, post.likes_count - 1)
+    if reaction_data.type == "LIKE":
+        await db.execute(
+            text("UPDATE posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
     else:
-        post.dislikes_count = max(0, post.dislikes_count - 1)
+        await db.execute(
+            text("UPDATE posts SET dislikes_count = GREATEST(0, dislikes_count - 1) WHERE id = :post_id"),
+            {"post_id": post_id}
+        )
     
     # Удаляем реакцию
-    await db.delete(reaction)
+    await db.execute(
+        text("DELETE FROM reactions WHERE id = :id"),
+        {"id": reaction_data.id}
+    )
+    
     await db.commit()
     
-    return MessageResponse(message="Реакция успешно удалена") 
+    return MessageResponse(message="Реакция успешно удалена")
+
+@router.post("/{post_id}/report", response_model=MessageResponse)
+async def report_post(
+    post_id: int = Path(..., description="ID сообщения"),
+    report_data: PostReport = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Отправка жалобы на сообщение"""
+    # Проверяем существование поста
+    post_query = select(Post).where(Post.id == post_id, Post.is_deleted == False)
+    post = await db.scalar(post_query)
+    
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено"
+        )
+    
+    # Получаем информацию о теме
+    topic_query = select(Topic).where(Topic.id == post.topic_id)
+    topic = await db.scalar(topic_query)
+    topic_title = topic.title if topic else "Неизвестная тема"
+    
+    # Получаем информацию о пользователе-авторе поста
+    author_info = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.USER_SERVICE_URL}/users/{post.author_id}"
+            )
+            if response.status_code == 200:
+                author_info = response.json()
+    except httpx.RequestError:
+        # В случае ошибки используем частичную информацию
+        pass
+    
+    author_username = author_info.get("username", f"Пользователь #{post.author_id}")
+    
+    # Получаем информацию о пользователе, отправившем жалобу
+    reporter_info = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.USER_SERVICE_URL}/users/{current_user.id}"
+            )
+            if response.status_code == 200:
+                reporter_info = response.json()
+    except httpx.RequestError:
+        # В случае ошибки используем частичную информацию
+        pass
+    
+    reporter_username = reporter_info.get("username", current_user.username or f"Пользователь #{current_user.id}")
+    
+    # Готовим сообщение для отправки в Telegram
+    content_preview = post.content[:100] + "..." if len(post.content) > 100 else post.content
+    message_text = f"""
+🚨 *НОВАЯ ЖАЛОБА НА СООБЩЕНИЕ* 🚨
+
+*Отправитель жалобы:* {reporter_username} (ID: {current_user.id})
+*Автор сообщения:* {author_username} (ID: {post.author_id})
+*Тема:* {topic_title}
+*ID сообщения:* {post_id}
+
+*Причина жалобы:* {report_data.reason}
+
+*Содержание сообщения:* 
+```
+{content_preview}
+```
+
+*Ссылка на сообщение:* {settings.FORUM_URL}/topics/{post.topic_id}?post={post_id}
+"""
+    
+    # Отправляем сообщение в Telegram
+    telegram_bot_token = "7668995111:AAFwYME1gQX6kd5kfsEKg4l0kYQt_iFQI-U"
+    chat_id = "-4744201336"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": message_text,
+                    "parse_mode": "Markdown"
+                }
+            )
+            telegram_result = response.json()
+            
+            if not telegram_result.get("ok", False):
+                print(f"Ошибка отправки в Telegram: {telegram_result}")
+    except Exception as e:
+        print(f"Ошибка при отправке уведомления в Telegram: {str(e)}")
+    
+    # Сохраняем жалобу в базе данных, используя ORM
+    new_report = PostReport(
+        post_id=post_id,
+        reporter_id=current_user.id,
+        reason=report_data.reason
+    )
+    
+    db.add(new_report)
+    await db.commit()
+    
+    return MessageResponse(message="Жалоба успешно отправлена") 

@@ -131,4 +131,16 @@ class Bookmark(Base):
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    topic = relationship("Topic", back_populates="bookmarks") 
+    topic = relationship("Topic", back_populates="bookmarks")
+
+class PostReport(Base):
+    """Модель для хранения жалоб на сообщения"""
+    __tablename__ = "post_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    reporter_id = Column(Integer, nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    post = relationship("Post") 
