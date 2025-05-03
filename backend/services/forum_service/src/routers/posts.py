@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import settings
 from database.database import get_db
-from database.models import Category, NotificationType, Post, ReferenceType, Topic, Image, PostReport
+from database.models import Category, NotificationType, Post, ReferenceType, Topic, Image, PostReport as PostReportModel
 from src.schemas.common import MessageResponse, PaginatedResponse
 from src.schemas.post import PostCreate, PostDetailResponse, PostResponse, PostUpdate, UserInfo
+from src.schemas.post import PostReport
 from src.utils.auth import User, get_current_user
 from src.utils.dependencies import (check_post_owner_or_moderator, get_post_or_404,
                                  get_topic_or_404)
@@ -864,7 +865,7 @@ async def report_post(
         print(f"Ошибка при отправке уведомления в Telegram: {str(e)}")
     
     # Сохраняем жалобу в базе данных, используя ORM
-    new_report = PostReport(
+    new_report = PostReportModel(
         post_id=post_id,
         reporter_id=current_user.id,
         reason=report_data.reason
