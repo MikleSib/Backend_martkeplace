@@ -1,4 +1,5 @@
 import uvicorn
+import uvicorn
 from fastapi import FastAPI, Request, Depends, HTTPException, File, UploadFile, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,9 @@ import random
 import aiohttp
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import httpx
+from fastapi.responses import JSONResponse
+from starlette.responses import Response, PlainTextResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 app = FastAPI(
     title="API Gateway",
@@ -137,48 +141,56 @@ async def root():
     return {"message": "health check"}
 
 @app.post("/auth/register")
-async def register(user_data: UserRegister):
-    if not check_route_enabled(f"{AUTH_SERVICE_URL}/auth/register"):
-        return {"message": "auth service is not running"}
+async def register(request: Request):
+    """
+    Регистрация нового пользователя
+    
+    Тело запроса (JSON):
+    - **username**: Имя пользователя
+    - **email**: Электронная почта пользователя
+    - **password**: Пароль пользователя
+    - **full_name**: Полное имя (опционально)
+    - **about_me**: О себе (опционально)
+    """
     try:
-        logger.info(f"Starting user registration for username: {user_data.username}")
+        body = await request.json()
         
-        # Регистрируем пользователя с неподтвержденным email
-        user_data.is_email_verified = False
+        # Приводим email к нижнему регистру
+        if "email" in body:
+            body["email"] = body["email"].lower()
         
-        response = requests.post(
-            f"{AUTH_SERVICE_URL}/auth/register",
-            json=user_data.dict()
-        )
-        logger.info(f"Auth service response status: {response.status_code}")
-        
-        if response.status_code != 200:
-            logger.error(f"Auth service error: {response.json()}")
-            return response.json()
+        async with httpx.AsyncClient() as client:
+            # Делаем запрос к auth_service
+            response = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/register",
+                json=body
+            )
             
-        user_info = response.json()
-        logger.info(f"User created successfully with ID: {user_info.get('id')}")
-        
-        # Отправляем код подтверждения на email
-        verification_result = await send_verification_code(user_data.email)
-        
-        # Возвращаем информацию о созданном пользователе и о необходимости подтверждения email
-        return {
-            **user_info,
-            "email_verification": {
-                "required": True,
-                "email": user_data.email,
-                "expires_in": verification_result.get("expires_in", 900)
-            }
-        }
-    except ValueError as e:
-        logger.error(f"Invalid JSON format: {str(e)}")
-        return {
-            "error": "Invalid JSON format",
-        }
+            # Получаем содержимое ответа
+            try:
+                response_json = response.json()
+            except:
+                response_json = {"detail": response.text or "Ошибка сервера"}
+            
+            # Возвращаем ответ с тем же статус-кодом
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                content=response_json,
+                status_code=response.status_code
+            )
+            
     except Exception as e:
-        logger.error(f"Unexpected error in register: {str(e)}")
-        return {"error": "Internal server error"}
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content={"detail": f"Ошибка сервера: {str(e)}"},
+            status_code=500
+        )
+
+# Для /api/auth/register можно сделать переадресацию
+@app.post("/api/auth/register")
+async def api_register(request: Request):
+    """API версия эндпоинта регистрации"""
+    return await register(request)
 
 @app.post("/api/auth/login")
 async def login(request: Request):
@@ -1984,47 +1996,42 @@ async def change_password(request: Request):
     
     return {"message": "Пароль успешно изменен"}
 
-# Добавляем маршрут /auth/register для обратной совместимости
 @app.post("/auth/register")
 async def legacy_register(request: Request):
     """
     Регистрация нового пользователя
-    
-    Тело запроса (JSON):
-    - **username**: Имя пользователя
-    - **email**: Электронная почта пользователя
-    - **password**: Пароль пользователя
-    - **full_name**: Полное имя (опционально)
-    - **about_me**: О себе (опционально)
     """
     try:
         body = await request.json()
-        # Приводим email к нижнему регистру
         if "email" in body:
             body["email"] = body["email"].lower()
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{AUTH_SERVICE_URL}/auth/register",
-                json=body
-            )
-            
-            if response.status_code != 200:
-                if response.status_code == 400 and "уже существует" in response.text:
-                    if "email" in response.text:
-                        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
-                    else:
-                        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
-                raise HTTPException(
-                    status_code=response.status_code, 
-                    detail=f"Ошибка регистрации: {response.text}"
-                )
-            
-            return response.json()
-    except HTTPException:
-        raise
+        # Используем библиотеку requests вместо httpx для теста
+        import requests
+        
+        # Синхронный запрос для проверки
+        response = requests.post(
+            f"{AUTH_SERVICE_URL}/auth/register",
+            json=body
+        )
+        
+        logging.info(f"Auth service response status: {response.status_code}")
+        
+        # Создаем прямой ответ FastAPI
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.headers.get("content-type", "application/json")
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+        logging.exception(f"Unexpected error in register: {str(e)}")
+        
+        # Аварийный вариант если все еще не работает
+        return PlainTextResponse(
+            content=f"Ошибка: {str(e)}",
+            status_code=400
+        )
 
 # Добавляем маршрут /auth/refresh для обратной совместимости
 @app.post("/auth/refresh")

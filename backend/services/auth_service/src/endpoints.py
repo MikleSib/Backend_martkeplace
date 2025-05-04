@@ -7,6 +7,7 @@ from jwt import create_access_token, create_refresh_token, verify_access_token, 
 from src.utils.password import verify_password
 import httpx
 from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -22,17 +23,32 @@ class ChangePassword(BaseModel):
 
 @router.post("/auth/register")
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    # Проверяем, существует ли пользователь с таким email
-    user_data.email = user_data.email.lower()  # Email в нижний регистр
-    user = await get_user_by_email(db, user_data.email)
-    if user:
-        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
+    # Приводим email к нижнему регистру
+    user_data.email = user_data.email.lower()
     
-    # Также проверяем username
-    user_check = await get_user_by_username(db, user_data.username)
-    if user_check:
-        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
+    # Сначала проверяем email
+    email_user = await get_user_by_email(db, user_data.email)
+    if email_user:
+        # Добавляем логирование
+        print(f"Registration failed: email {user_data.email} already exists")
+        # Явно возвращаем JSONResponse с кодом 400
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Пользователь с такой почтой уже существует"}
+        )
     
+    # Затем проверяем username
+    username_user = await get_user_by_username(db, user_data.username)
+    if username_user:
+        # Добавляем логирование
+        print(f"Registration failed: username {user_data.username} already exists")
+        # Явно возвращаем JSONResponse с кодом 400
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Пользователь с таким именем уже существует"}
+        )
+    
+    # Если конфликтов нет, создаем пользователя
     user = await create_user(db, user_data.username, user_data.password, user_data.email)
     async with httpx.AsyncClient() as client:
             try:
