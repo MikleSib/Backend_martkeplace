@@ -5,7 +5,7 @@ from database import get_db
 from database import UserProfile
 from database import create_user_profile, get_user_profile
 from config import ProfileCreate, ProfileResponse, UserRole
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 router = APIRouter()
@@ -118,3 +118,86 @@ async def get_users_batch_post(request_data: dict, db: AsyncSession = Depends(ge
         return profiles
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/user/avatar", response_model=ProfileResponse)
+async def update_user_avatar(user_id: int, file_url: str, db: AsyncSession = Depends(get_db)):
+    """Обновляет аватар пользователя"""
+    try:
+        # Проверяем существование профиля
+        profile = await get_user_profile(db, user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Профиль не найден")
+        
+        # Обновляем только URL аватара
+        profile.avatar = file_url
+        
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/user/avatar/delete", response_model=ProfileResponse)
+async def delete_user_avatar(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Удаляет аватар пользователя"""
+    try:
+        profile = await get_user_profile(db, user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Профиль не найден")
+        
+        profile.avatar = None
+        
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/user/profile/update", response_model=ProfileResponse)
+async def update_user_info(
+    user_id: int, 
+    username: str, 
+    about_me: Optional[str] = None, 
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновляет информацию о пользователе (username и about_me)"""
+    try:
+        profile = await get_user_profile(db, user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Профиль не найден")
+        
+        # Проверяем уникальность username, если он изменился
+        if username != profile.username:
+            result = await db.execute(
+                select(UserProfile).where(UserProfile.username == username)
+            )
+            existing_user = result.scalar_one_or_none()
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
+        
+        profile.username = username
+        if about_me is not None:
+            profile.about_me = about_me
+        
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/user/profile/me", response_model=ProfileResponse)
+async def get_my_profile(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Получение профиля текущего пользователя по ID из JWT токена"""
+    profile = await get_user_profile(db, user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Профиль не найден")
+    return profile

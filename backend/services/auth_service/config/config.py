@@ -9,5 +9,5 @@ class UserRegister(BaseModel):
     about_me: Optional[str] = None
 
 class UserLogin(BaseModel):
-    username: str
+    email: str
     password: str

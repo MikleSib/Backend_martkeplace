@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from database import get_db
-from database import get_user_by_username, create_user
+from database import get_db, get_user_by_email, get_user_by_username, create_user
 from config import UserRegister, UserLogin
 from jwt import create_access_token, create_refresh_token, verify_access_token, verify_refresh_token
 from src.utils.password import verify_password
@@ -16,11 +15,23 @@ USER_SERVICE_URL = "http://user_service:8002"
 class RefreshToken(BaseModel):
     refresh_token: str
 
+# Добавляем модель для запроса смены пароля
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+
 @router.post("/auth/register")
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    user = await get_user_by_username(db, user_data.username)
+    # Проверяем, существует ли пользователь с таким email
+    user_data.email = user_data.email.lower()  # Email в нижний регистр
+    user = await get_user_by_email(db, user_data.email)
     if user:
-        raise HTTPException(status_code=400, detail="User already exists")
+        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
+    
+    # Также проверяем username
+    user_check = await get_user_by_username(db, user_data.username)
+    if user_check:
+        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
     
     user = await create_user(db, user_data.username, user_data.password, user_data.email)
     async with httpx.AsyncClient() as client:
@@ -49,21 +60,28 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 @router.post("/auth/login")
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    user = await get_user_by_username(db, user_data.username)
+    user_data.email = user_data.email.lower()  # Email в нижний регистр
+    
+    # Ищем пользователя по email вместо username
+    user = await get_user_by_email(db, user_data.email)
     if not user or not verify_password(user_data.password, user.password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        raise HTTPException(status_code=400, detail="Неверные учетные данные")
+    
+    # Формируем токен, используя username для sub (это обеспечит обратную совместимость)
     access_token = create_access_token({
-        "sub": user.username, 
-        "email": user.email, 
+        "sub": user.username,  # sub остается username для обратной совместимости
+        "email": user.email,
         "id": user.id,
         "is_admin": user.is_admin
     })
+    
     refresh_token = create_refresh_token({
-        "sub": user.username, 
-        "email": user.email, 
+        "sub": user.username,
+        "email": user.email,
         "id": user.id,
         "is_admin": user.is_admin
     })
+    
     return {
         "access_token": access_token, 
         "refresh_token": refresh_token,
@@ -118,3 +136,32 @@ async def check_token(token: str, db: AsyncSession = Depends(get_db)):
         "username": user.username,
         "email": user.email
     }
+
+@router.post("/auth/change-password")
+async def change_password(
+    password_data: ChangePassword, 
+    token: str, 
+    db: AsyncSession = Depends(get_db)
+):
+    # Проверяем токен
+    payload = verify_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Недействительный токен")
+    
+    # Получаем пользователя по username из sub
+    user = await get_user_by_username(db, payload["sub"])
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    # Проверяем старый пароль
+    if not verify_password(password_data.old_password, user.password):
+        raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+    
+    # Хешируем и устанавливаем новый пароль
+    from src.utils.password import get_password_hash
+    user.password = get_password_hash(password_data.new_password)
+    
+    # Сохраняем изменения
+    await db.commit()
+    
+    return {"message": "Пароль успешно изменен"}

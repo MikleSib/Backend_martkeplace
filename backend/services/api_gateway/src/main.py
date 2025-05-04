@@ -8,11 +8,12 @@ import logging
 from fastapi.responses import StreamingResponse
 import io
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from pydantic import EmailStr
 import random
 import aiohttp
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+import httpx
 
 app = FastAPI(
     title="API Gateway",
@@ -179,92 +180,88 @@ async def register(user_data: UserRegister):
         logger.error(f"Unexpected error in register: {str(e)}")
         return {"error": "Internal server error"}
 
-@app.post("/auth/login")
-async def login(user_data: UserLogin):
-    if not check_route_enabled(f"{AUTH_SERVICE_URL}/auth/health"):
-        return {"message": "auth service is not running"}
-    try:     
-        response = requests.post(f"{AUTH_SERVICE_URL}/auth/login", json=user_data.dict())
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Login failed"))
+@app.post("/api/auth/login")
+async def login(request: Request):
+    """
+    Вход в систему по email и паролю
+    
+    Тело запроса (JSON):
+    - **email**: Электронная почта пользователя
+    - **password**: Пароль пользователя
+    """
+    try:
+        body = await request.json()
+        email = body.get("email", "").lower()  # Приводим email к нижнему регистру
+        password = body.get("password")
         
-        user_info = response.json()
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Требуются оба поля: email и password")
         
-        # Проверяем, подтвержден ли email
-        is_verified = user_info.get("is_email_verified", False)
-        
-        user_email = user_info.get("email")
-        if not user_email and "user" in user_info and user_info["user"].get("email"):
-            user_email = user_info["user"].get("email")
-        
-        if not user_email:
-            # Получаем email пользователя из базы данных, если его нет в ответе
-            logger.info(f"Получение email для пользователя {user_info.get('username')}")
-            user_id = user_info.get("id")
-            if "user" in user_info and user_info["user"].get("id"):
-                user_id = user_info["user"].get("id")
+        # Исправляем структуру try-except с async with
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/login",
+                    json={"email": email, "password": password}
+                )
                 
-            if user_id:
-                email_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+                if response.status_code != 200:
+                    if response.status_code == 400:
+                        raise HTTPException(status_code=400, detail="Неверный email или пароль")
+                    raise HTTPException(
+                        status_code=response.status_code, 
+                        detail=f"Ошибка авторизации: {response.text}"
+                    )
                 
-                if email_response.status_code == 200:
-                    user_email = email_response.json().get("email")
-                
-        if user_email:
-            # Проверяем верификацию в Redis (временное решение)
-            verified_key = f"email_verified_{user_email}"
-            verification_response = requests.get(f"{REDIS_SERVICE_URL}/get/{verified_key}")
-            logger.info(f"Проверка верификации в Redis: {verified_key}, ответ: {verification_response.status_code}, значение: {verification_response.text}")
+                return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка HTTP: {str(e)}")
             
-            if verification_response.status_code == 200:
-                try:
-                    redis_value = verification_response.json()
-                    if redis_value == "true" or redis_value == True:
-                        # Если в Redis отмечено, что email верифицирован
-                        is_verified = True
-                        # Обновим is_email_verified в user_info
-                        if "user" in user_info:
-                            user_info["user"]["is_email_verified"] = True
-                        else:
-                            user_info["is_email_verified"] = True
-                        logger.info(f"Email {user_email} подтвержден (из Redis)")
-                except Exception as e:
-                    logger.error(f"Ошибка при проверке ключа в Redis: {str(e)}")
-        
-        if not is_verified and user_email:
-            # Если email не подтвержден, отправляем новый код 
-            logger.info(f"Login attempt for user with unverified email: {user_email}")
-            
-            # Отправляем новый код подтверждения
-            verification_result = await send_verification_code(user_email)
-            
-            return {
-                **user_info,
-                "email_verification": {
-                    "required": True,
-                    "message": "Email не подтвержден. Новый код был отправлен на вашу почту.",
-                    "email": user_email,
-                    "expires_in": verification_result.get("expires_in", 900)
-                }
-            }
-        elif not user_email:
-            # Если email всё ещё не найден, вернём ошибку
-            logger.error("Не удалось получить email пользователя")
-            return {
-                **user_info,
-                "email_verification": {
-                    "required": True,
-                    "message": "Email не подтвержден, но не удалось отправить код.",
-                    "error": "Не найден email пользователя"
-                }
-            }
-        
-        return user_info
-    except ValueError as e:
-        return {"error": "Invalid JSON format"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error in login: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+
+@app.post("/auth/login")
+async def legacy_login(request: Request):
+    """
+    Вход в систему по email и паролю
+    
+    Тело запроса (JSON):
+    - **email**: Электронная почта пользователя
+    - **password**: Пароль пользователя
+    """
+    try:
+        body = await request.json()
+        email = body.get("email", "").lower()  # Приводим email к нижнему регистру
+        password = body.get("password")
+        
+        if not email or not password:
+            raise HTTPException(status_code=400, detail="Требуются оба поля: email и password")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/login",
+                    json={"email": email, "password": password}
+                )
+                
+                if response.status_code != 200:
+                    if response.status_code == 400:
+                        raise HTTPException(status_code=400, detail="Неверный email или пароль")
+                    raise HTTPException(
+                        status_code=response.status_code, 
+                        detail=f"Ошибка авторизации: {response.text}"
+                    )
+                
+                return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка HTTP: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 class RefreshToken(BaseModel):
     refresh_token: str
@@ -1678,6 +1675,438 @@ async def upload_forum_image(
             status_code=500,
             detail=f"Ошибка при загрузке изображения: {str(e)}"
         )
+
+# Эндпоинт для загрузки и обновления аватара пользователя
+@app.post("/api/user/avatar", tags=["Пользователи"])
+async def upload_and_update_avatar(
+    file: UploadFile = File(...),
+    user_id: int = Depends(verify_token),
+    token: str = Depends(verify_token)
+):
+    """
+    Загружает новую аватарку пользователя и обновляет его профиль
+    
+    - **file**: Файл изображения аватара
+    - Авторизация: Требуется Bearer токен
+    """
+    # Загрузка файла
+    file_service_url = f"{FILE_SERVICE_URL}/upload"
+    files = {"file": (file.filename, await file.read(), file.content_type)}
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(file_service_url, files=files)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка загрузки файла: {response.text}"
+            )
+    
+    file_data = response.json()
+    file_url = file_data["url"]
+    
+    # Обновление аватара в профиле пользователя
+    user_service_url = f"{USER_SERVICE_URL}/user/avatar"
+    params = {"user_id": user_id, "file_url": file_url}
+    
+    async with httpx.AsyncClient() as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = await client.post(user_service_url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка обновления аватара: {response.text}"
+            )
+    
+    return response.json()
+
+# Модель для данных профиля
+class UserProfileUpdate(BaseModel):
+    username: str
+    about_me: str = None
+
+# Исправленный эндпоинт для обновления профиля
+@app.put("/api/user/profile", tags=["Пользователи"])
+async def update_user_profile(
+    user_data: UserProfileUpdate,  # Явно указываем, что данные из тела запроса
+    user_id: int = Depends(verify_token),
+    token: str = Depends(verify_token)
+):
+    """
+    Обновляет данные профиля пользователя
+    
+    - **username**: Новое имя пользователя (должно быть уникальным)
+    - **about_me**: Информация о пользователе
+    - Авторизация: Требуется Bearer токен
+    """
+    user_service_url = f"{USER_SERVICE_URL}/user/profile/update"
+    params = {
+        "user_id": user_id,
+        "username": user_data.username
+    }
+    
+    if user_data.about_me is not None:
+        params["about_me"] = user_data.about_me
+    
+    async with httpx.AsyncClient() as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = await client.put(user_service_url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            if response.status_code == 400 and "уже существует" in response.text:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Пользователь с таким именем уже существует"
+                )
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка обновления профиля: {response.text}"
+            )
+    
+    return response.json()
+
+# Изменено с DELETE на POST
+@app.post("/api/user/avatar/delete", tags=["Пользователи"])
+async def delete_user_avatar(
+    user_id: int = Depends(verify_token),
+    token: str = Depends(verify_token)
+):
+    """
+    Удаляет аватар пользователя
+    
+    - Авторизация: Требуется Bearer токен
+    """
+    user_service_url = f"{USER_SERVICE_URL}/user/avatar/delete"
+    params = {"user_id": user_id}
+    
+    async with httpx.AsyncClient() as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = await client.post(user_service_url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка удаления аватара: {response.text}"
+            )
+    
+    return response.json()
+
+# Минимальная версия эндпоинта получения профиля
+@app.get("/api/user/profile/me")
+async def get_current_user_profile(request: Request):
+    """Получает данные профиля текущего пользователя и email из JWT токена"""
+    # Извлекаем токен из заголовка
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    
+    token = auth_header.replace("Bearer ", "")
+    
+    # Проверяем токен в auth_service
+    async with httpx.AsyncClient() as client:
+        auth_response = await client.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": token}
+        )
+        
+        if auth_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+        
+        user_data = auth_response.json()
+        logger.info(f"User data: {user_data}")
+        user_id = user_data.get("user_id")
+        user_email = user_data.get("email") 
+
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Токен не содержит ID пользователя")
+        
+        # Получаем профиль из user_service
+        user_response = await client.get(
+            f"{USER_SERVICE_URL}/user/profile/{user_id}"  # используем существующий endpoint
+        )
+        
+        if user_response.status_code != 200:
+            if user_response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Профиль не найден")
+            raise HTTPException(
+                status_code=user_response.status_code,
+                detail=f"Ошибка получения профиля: {user_response.text}"
+            )
+        profile_data = user_response.json()
+        profile_data["email"] = user_email 
+        return profile_data
+    
+
+# Минимальная версия эндпоинта обновления профиля
+@app.put("/api/user/profile")
+async def update_user_profile(request: Request):
+    """Обновляет данные профиля пользователя"""
+    # Извлекаем токен из заголовка
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    
+    token = auth_header.replace("Bearer ", "")
+    
+    # Получаем тело запроса
+    try:
+        body = await request.json()
+    except:
+        raise HTTPException(status_code=400, detail="Неверный формат JSON")
+    
+    # Проверяем токен в auth_service
+    async with httpx.AsyncClient() as client:
+        auth_response = await client.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": token}
+        )
+        
+        if auth_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+        
+        user_data = auth_response.json()
+        user_id = user_data.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Токен не содержит ID пользователя")
+        
+        # Обновляем профиль через существующий endpoint
+        profile_data = body.copy()
+        profile_data["user_id"] = user_id
+        
+        user_response = await client.patch(
+            f"{USER_SERVICE_URL}/user/profile/{user_id}",
+            json=profile_data
+        )
+        
+        if user_response.status_code != 200:
+            raise HTTPException(
+                status_code=user_response.status_code,
+                detail=f"Ошибка обновления профиля: {user_response.text}"
+            )
+        
+        return user_response.json()
+
+# Минимальная версия эндпоинта удаления аватара
+@app.post("/api/user/avatar/delete")
+async def delete_user_avatar(request: Request):
+    """Удаляет аватар пользователя"""
+    # Извлекаем токен из заголовка
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    
+    token = auth_header.replace("Bearer ", "")
+    
+    # Проверяем токен в auth_service
+    async with httpx.AsyncClient() as client:
+        auth_response = await client.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": token}
+        )
+        
+        if auth_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Недействительный токен")
+        
+        user_data = auth_response.json()
+        user_id = user_data.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Токен не содержит ID пользователя")
+        
+        # Обновляем профиль, устанавливая аватар в NULL
+        profile_update = {"avatar": None}
+        user_response = await client.patch(
+            f"{USER_SERVICE_URL}/user/profile/{user_id}",
+            json=profile_update
+        )
+        
+        if user_response.status_code != 200:
+            raise HTTPException(
+                status_code=user_response.status_code,
+                detail=f"Ошибка удаления аватара: {user_response.text}"
+            )
+        
+        return user_response.json()
+
+@app.post("/api/user/change-password", tags=["Пользователи"])
+async def change_password(request: Request):
+    """
+    Изменяет пароль пользователя
+    
+    Тело запроса (JSON):
+    - **old_password**: Текущий пароль
+    - **new_password**: Новый пароль
+    
+    Требуется Bearer токен для авторизации
+    """
+    # Извлекаем токен из заголовка
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    
+    token = auth_header.replace("Bearer ", "")
+    
+    # Получаем данные из тела запроса
+    try:
+        body = await request.json()
+        old_password = body.get("old_password")
+        new_password = body.get("new_password")
+        
+        if not old_password or not new_password:
+            raise HTTPException(status_code=400, detail="Требуются оба поля: old_password и new_password")
+    except:
+        raise HTTPException(status_code=400, detail="Неверный формат JSON")
+    
+    # Отправляем запрос в auth_service
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{AUTH_SERVICE_URL}/auth/change-password",
+            json={"old_password": old_password, "new_password": new_password},
+            params={"token": token}
+        )
+        
+        if response.status_code != 200:
+            # Обрабатываем типичные ошибки
+            if response.status_code == 400 and "Неверный текущий пароль" in response.text:
+                raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+            elif response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Недействительный токен")
+            elif response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Пользователь не найден")
+            
+            # Общая ошибка
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка смены пароля: {response.text}"
+            )
+    
+    return {"message": "Пароль успешно изменен"}
+
+# Добавляем маршрут /auth/register для обратной совместимости
+@app.post("/auth/register")
+async def legacy_register(request: Request):
+    """
+    Регистрация нового пользователя
+    
+    Тело запроса (JSON):
+    - **username**: Имя пользователя
+    - **email**: Электронная почта пользователя
+    - **password**: Пароль пользователя
+    - **full_name**: Полное имя (опционально)
+    - **about_me**: О себе (опционально)
+    """
+    try:
+        body = await request.json()
+        # Приводим email к нижнему регистру
+        if "email" in body:
+            body["email"] = body["email"].lower()
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/register",
+                json=body
+            )
+            
+            if response.status_code != 200:
+                if response.status_code == 400 and "уже существует" in response.text:
+                    if "email" in response.text:
+                        raise HTTPException(status_code=400, detail="Пользователь с такой почтой уже существует")
+                    else:
+                        raise HTTPException(status_code=400, detail="Пользователь с таким именем уже существует")
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail=f"Ошибка регистрации: {response.text}"
+                )
+            
+            return response.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+
+# Добавляем маршрут /auth/refresh для обратной совместимости
+@app.post("/auth/refresh")
+async def legacy_refresh(request: Request):
+    """
+    Обновление JWT токена
+    
+    Тело запроса (JSON):
+    - **refresh_token**: Refresh токен
+    """
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+        
+        if not refresh_token:
+            raise HTTPException(status_code=400, detail="Refresh токен обязателен")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/refresh",
+                json={"refresh_token": refresh_token}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail=f"Ошибка обновления токена: {response.text}"
+                )
+            
+            return response.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+
+# Добавляем маршрут /auth/change-password для обратной совместимости
+@app.post("/auth/change-password")
+async def legacy_change_password(request: Request):
+    """
+    Изменение пароля пользователя
+    
+    Тело запроса (JSON):
+    - **old_password**: Текущий пароль
+    - **new_password**: Новый пароль
+    
+    Авторизация: Требуется Bearer токен
+    """
+    # Извлекаем токен из заголовка
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+    
+    token = auth_header.replace("Bearer ", "")
+    
+    try:
+        body = await request.json()
+        old_password = body.get("old_password")
+        new_password = body.get("new_password")
+        
+        if not old_password or not new_password:
+            raise HTTPException(status_code=400, detail="Требуются оба поля: old_password и new_password")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/change-password",
+                json={"old_password": old_password, "new_password": new_password},
+                params={"token": token}
+            )
+            
+            if response.status_code != 200:
+                if response.status_code == 400 and "Неверный текущий пароль" in response.text:
+                    raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail=f"Ошибка смены пароля: {response.text}"
+                )
+        
+        return {"message": "Пароль успешно изменен"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 # Для запуска сервиса напрямую через Python
 if __name__ == "__main__":
