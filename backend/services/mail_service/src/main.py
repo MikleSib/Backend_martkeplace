@@ -97,6 +97,8 @@ async def send_verification_code(email_request: VerificationEmailRequest):
     Отправляет код подтверждения на почту при регистрации
     """
     try:
+        logger.info(f"Начало отправки кода подтверждения для email: {email_request.to_email}")
+        
         message = MIMEMultipart()
         
         from_name_encoded = email.header.Header(SMTP_FROM_NAME, 'utf-8').encode()
@@ -107,17 +109,7 @@ async def send_verification_code(email_request: VerificationEmailRequest):
         message["Message-ID"] = email.utils.make_msgid(domain=EMAIL_DOMAIN)
         message["MIME-Version"] = "1.0"
         
-        # Создаем текст письма с кодом
-        text_content = f"""
-Добро пожаловать на Рыбный Форум!
-
-Ваш код подтверждения регистрации: {email_request.code}
-
-Код действителен в течение 15 минут. Если вы не запрашивали этот код, просто проигнорируйте это письмо.
-
-С уважением,
-Команда Рыбного Форума
-        """
+        logger.debug(f"Заголовки письма сформированы: From={message['From']}, To={message['To']}")
         
         html_content = f"""
 <html>
@@ -141,14 +133,12 @@ async def send_verification_code(email_request: VerificationEmailRequest):
 </html>
         """
         
-        text_part = MIMEText(text_content, "plain", "utf-8")
         html_part = MIMEText(html_content, "html", "utf-8")
-        
-        message.attach(text_part)
         message.attach(html_part)
         
-        logger.info(f"Sending verification code to {email_request.to_email}")
+        logger.debug("HTML контент письма сформирован и прикреплен")
         
+        logger.info(f"Подключение к SMTP серверу: {SMTP_HOST}:{SMTP_PORT}")
         smtp = aiosmtplib.SMTP(
             hostname=SMTP_HOST,
             port=SMTP_PORT,
@@ -156,16 +146,24 @@ async def send_verification_code(email_request: VerificationEmailRequest):
             validate_certs=False
         )
         
+        logger.debug("Установка SMTP соединения...")
         await smtp.connect()
+        
+        logger.debug("Выполнение SMTP аутентификации...")
         await smtp.login(EMAIL_ADDRESS_ENCODED, SMTP_PASSWORD)
+        
+        logger.info(f"Отправка письма на адрес: {email_request.to_email}")
         await smtp.send_message(message)
+        
+        logger.debug("Закрытие SMTP соединения...")
         await smtp.quit()
 
-        logger.info(f"Verification code sent successfully to {email_request.to_email}")
+        logger.info(f"Код подтверждения успешно отправлен на {email_request.to_email}")
         return {"status": "success", "message": "Код подтверждения отправлен"}
 
     except Exception as e:
-        logger.error(f"Error sending verification code: {str(e)}")
+        logger.error(f"Ошибка при отправке кода подтверждения: {str(e)}", exc_info=True)
+        logger.error(f"Детали ошибки: тип={type(e).__name__}, сообщение={str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to send verification code: {str(e)}")
 
 if __name__ == "__main__":
