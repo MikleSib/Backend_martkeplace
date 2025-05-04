@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     username: str
     full_name: str
     about_me: Optional[str] = None
+    avatar: Optional[str] = None
 
 class UserRegister(BaseModel):
     username: str
