@@ -172,15 +172,48 @@ async def register(request: Request):
             except:
                 response_json = {"detail": response.text or "Ошибка сервера"}
             
+            # Если статус не 200, возвращаем ошибку с тем же статус-кодом
+            if response.status_code != 200:
+                return JSONResponse(
+                    content=response_json,
+                    status_code=response.status_code
+                )
+            
+            # Если регистрация успешна, отправляем код подтверждения на почту
+            if "email" in response_json:
+                try:
+                    # Генерируем 6-значный код подтверждения
+                    verification_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                    
+                    # Сохраняем код в Redis для последующей проверки
+                    verification_key = f"verification_code_{response_json['email']}"
+                    redis_response = await client.post(
+                        f"{REDIS_SERVICE_URL}/set",
+                        json={"key": verification_key, "value": verification_code, "expire": 900}  # 15 минут
+                    )
+                    logger.info(f"Verification code saved to Redis: {redis_response.status_code}")
+                    
+                    # Отправляем код на почту пользователя
+                    mail_response = await client.post(
+                        f"{MAIL_SERVICE_URL}/send-verification",
+                        json={
+                            "to_email": response_json["email"],
+                            "code": verification_code
+                        }
+                    )
+                    logger.info(f"Mail service response: {mail_response.status_code}, {mail_response.text}")
+                except Exception as mail_err:
+                    logger.error(f"Error sending verification email: {str(mail_err)}")
+                    # Не прерываем регистрацию, если отправка письма не удалась
+            
             # Возвращаем ответ с тем же статус-кодом
-            from fastapi.responses import JSONResponse
             return JSONResponse(
                 content=response_json,
                 status_code=response.status_code
             )
             
     except Exception as e:
-        from fastapi.responses import JSONResponse
+        logger.exception(f"Registration error: {str(e)}")
         return JSONResponse(
             content={"detail": f"Ошибка сервера: {str(e)}"},
             status_code=500
@@ -220,6 +253,8 @@ async def login(request: Request):
                 if response.status_code != 200:
                     if response.status_code == 400:
                         raise HTTPException(status_code=400, detail="Неверный email или пароль")
+                    elif response.status_code == 403 and "подтвердить email" in response.text:
+                        raise HTTPException(status_code=403, detail="Необходимо подтвердить email перед входом в систему")
                     raise HTTPException(
                         status_code=response.status_code, 
                         detail=f"Ошибка авторизации: {response.text}"
@@ -261,6 +296,8 @@ async def legacy_login(request: Request):
                 if response.status_code != 200:
                     if response.status_code == 400:
                         raise HTTPException(status_code=400, detail="Неверный email или пароль")
+                    elif response.status_code == 403 and "подтвердить email" in response.text:
+                        raise HTTPException(status_code=403, detail="Необходимо подтвердить email перед входом в систему")
                     raise HTTPException(
                         status_code=response.status_code, 
                         detail=f"Ошибка авторизации: {response.text}"
@@ -1125,74 +1162,85 @@ async def send_verification_code(to_email: EmailStr):
         raise HTTPException(status_code=500, detail=f"Ошибка при отправке кода подтверждения: {str(e)}")
 
 @app.post("/auth/verify-email")
-async def verify_email(to_email: EmailStr, code: str):
+async def verify_email(to_email: str, code: str):
     """
     Проверяет код подтверждения email и обновляет статус верификации пользователя
+    
+    Параметры запроса:
+    - **to_email**: Email пользователя
+    - **code**: Код подтверждения из письма
     """
     try:
-        # Получаем код из кэша
-        verification_key = f"verification_code_{to_email}"
-        response = requests.get(f"{REDIS_SERVICE_URL}/get/{verification_key}")
+        email = to_email.lower()
         
-        if response.status_code != 200 or not response.json():
-            logger.warning(f"Код для {to_email} не найден или истек срок его действия")
+        if not email or not code:
+            return JSONResponse(
+                content={"detail": "Email и код подтверждения обязательны"},
+                status_code=400
+            )
+        
+        async with httpx.AsyncClient() as client:
+            # Получаем код из Redis
+            verification_key = f"verification_code_{email}"
+            redis_response = await client.get(f"{REDIS_SERVICE_URL}/get/{verification_key}")
             
-            # Генерируем новый код и отправляем его
-            verification_result = await send_verification_code(to_email)
-            return {
-                "status": "error",
-                "verified": False,
-                "message": "Срок действия кода истек. Отправлен новый код.",
-                "expires_in": verification_result.get("expires_in", 900)
-            }
+            if redis_response.status_code != 200 or not redis_response.json():
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "verified": False,
+                        "message": "Срок действия кода истек. Запросите новый код."
+                    },
+                    status_code=400
+                )
+                
+            saved_code = redis_response.json()
             
-        saved_code = response.json()
-        
-        if saved_code != code:
-            logger.warning(f"Неверный код для {to_email}: ожидался {saved_code}, получен {code}")
-            return {
-                "status": "error",
-                "verified": False,
-                "message": "Неверный код подтверждения"
-            }
-        
-        # Код верный, отмечаем email как подтвержденный
-        # Удаляем код из кэша, так как он больше не нужен
-        delete_response = requests.delete(f"{REDIS_SERVICE_URL}/delete/{verification_key}")
-        logger.info(f"Удаление ключа верификации: {verification_key}, статус: {delete_response.status_code}")
-        
-        # ВРЕМЕННОЕ РЕШЕНИЕ: Поскольку эндпоинт /auth/verify-email еще не реализован,
-        # мы просто отмечаем в Redis, что email подтвержден
-        verified_key = f"email_verified_{to_email}"
-        set_response = requests.post(
-            f"{REDIS_SERVICE_URL}/set",
-            json={"key": verified_key, "value": "true", "expire": 31536000}  # 1 год
-        )
-        logger.info(f"Установка ключа верификации: {verified_key}, статус: {set_response.status_code}")
-        
-        # Находим пользователя по email, чтобы вернуть его данные
-        # В будущем заменить на вызов auth_service, когда эндпоинт будет готов
-        try:
-            # Поиск пользователя по email
-            user_info = {"email": to_email, "is_email_verified": True}
+            if saved_code != code:
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "verified": False,
+                        "message": "Неверный код подтверждения"
+                    },
+                    status_code=400
+                )
             
-            return {
-                "status": "success",
-                "verified": True,
-                "message": "Email успешно подтвержден",
-                "user": user_info
-            }
-        except Exception as e:
-            logger.error(f"Ошибка при поиске пользователя: {str(e)}")
-            return {
-                "status": "success",
-                "verified": True,
-                "message": "Email успешно подтвержден, но информация о пользователе недоступна",
-            }
+            # Код верный, обновляем статус верификации в auth_service
+            auth_response = await client.post(
+                f"{AUTH_SERVICE_URL}/auth/verify-email",
+                params={"email": email, "code": code}
+            )
+            
+            if auth_response.status_code != 200:
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "verified": False,
+                        "message": f"Ошибка верификации: {auth_response.text}"
+                    },
+                    status_code=auth_response.status_code
+                )
+            
+            # Удаляем код из Redis, так как он использован
+            await client.delete(f"{REDIS_SERVICE_URL}/delete/{verification_key}")
+            
+            return JSONResponse(
+                content={
+                    "status": "success",
+                    "verified": True,
+                    "message": "Email успешно подтвержден",
+                    "user": auth_response.json()
+                },
+                status_code=200
+            )
             
     except Exception as e:
-        logger.error(f"Ошибка при проверке кода подтверждения: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при проверке кода подтверждения: {str(e)}")
+        logger.exception(f"Email verification error: {str(e)}")
+        return JSONResponse(
+            content={"detail": f"Ошибка сервера: {str(e)}"},
+            status_code=500
+        )
 
 # ФОРУМ ЭНДПОИНТЫ
 # Категории форума
@@ -1995,43 +2043,6 @@ async def change_password(request: Request):
             )
     
     return {"message": "Пароль успешно изменен"}
-
-@app.post("/auth/register")
-async def legacy_register(request: Request):
-    """
-    Регистрация нового пользователя
-    """
-    try:
-        body = await request.json()
-        if "email" in body:
-            body["email"] = body["email"].lower()
-        
-        # Используем библиотеку requests вместо httpx для теста
-        import requests
-        
-        # Синхронный запрос для проверки
-        response = requests.post(
-            f"{AUTH_SERVICE_URL}/auth/register",
-            json=body
-        )
-        
-        logging.info(f"Auth service response status: {response.status_code}")
-        
-        # Создаем прямой ответ FastAPI
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.headers.get("content-type", "application/json")
-        )
-    except Exception as e:
-        logging.exception(f"Unexpected error in register: {str(e)}")
-        
-        # Аварийный вариант если все еще не работает
-        return PlainTextResponse(
-            content=f"Ошибка: {str(e)}",
-            status_code=400
-        )
 
 # Добавляем маршрут /auth/refresh для обратной совместимости
 @app.post("/auth/refresh")

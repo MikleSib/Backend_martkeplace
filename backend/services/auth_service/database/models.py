@@ -10,3 +10,4 @@ class User(Base):
     password = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    is_email_verified = Column(Boolean, default=False, nullable=False)

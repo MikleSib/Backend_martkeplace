@@ -83,6 +83,10 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=400, detail="Неверные учетные данные")
     
+    # Проверяем подтверждение email
+    if not user.is_email_verified:
+        raise HTTPException(status_code=403, detail="Необходимо подтвердить email перед входом в систему")
+    
     # Формируем токен, используя username для sub (это обеспечит обратную совместимость)
     access_token = create_access_token({
         "sub": user.username,  # sub остается username для обратной совместимости
@@ -181,3 +185,35 @@ async def change_password(
     await db.commit()
     
     return {"message": "Пароль успешно изменен"}
+
+@router.post("/auth/verify-email")
+async def verify_email(email: str, code: str, db: AsyncSession = Depends(get_db)):
+    """
+    Подтверждает email пользователя с помощью кода верификации
+    """
+    try:
+        # Приводим email к нижнему регистру
+        email = email.lower()
+        
+        # Находим пользователя по email
+        user = await get_user_by_email(db, email)
+        if not user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        
+        # Проверка кода будет выполняться на уровне API Gateway через Redis
+        # Здесь просто обновляем статус верификации
+        
+        user.is_email_verified = True
+        await db.commit()
+        
+        return {
+            "message": "Email успешно подтвержден",
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка верификации email: {str(e)}")
