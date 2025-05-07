@@ -159,7 +159,41 @@ class MarketplaceCRUD:
         )
         return result.scalars().first()
     
+    async def hide_product(self, product_id: int) -> Optional[Product]:
+        """
+        Скрывает товар, устанавливая статус 'hidden'
+        
+        Args:
+            product_id (int): ID товара для скрытия
+            
+        Returns:
+            Optional[Product]: Обновленный товар или None, если товар не найден
+        """
+        product = await self.get_product(product_id)
+        if not product:
+            return None
+        
+        product.status = "hidden"
+        await self.db.commit()
+        
+        # Загружаем обновленный продукт со связанной компанией
+        result = await self.db.execute(
+            select(Product)
+            .options(selectinload(Product.company))
+            .where(Product.id == product_id)
+        )
+        return result.scalars().first()
+    
     async def delete_product(self, product_id: int) -> bool:
+        """
+        Полностью удаляет товар из базы данных
+        
+        Args:
+            product_id (int): ID товара для удаления
+            
+        Returns:
+            bool: True если товар был удален, False если товар не найден
+        """
         product = await self.get_product(product_id)
         if not product:
             return False

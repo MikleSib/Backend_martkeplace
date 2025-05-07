@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Security
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from database import get_db, MarketplaceCRUD
@@ -127,4 +127,46 @@ async def delete_product(
     if not success:
         raise HTTPException(status_code=500, detail="Не удалось удалить товар")
     
-    return {"message": "Товар успешно удален"} 
+    return {"message": "Товар успешно удален"}
+
+@router.post("/admin/products/{product_id}/hide", response_model=ProductResponse)
+async def hide_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Скрыть товар (только для администраторов)
+    
+    - **product_id**: ID товара для скрытия
+    
+    Returns:
+        ProductResponse: Обновленный товар со статусом 'hidden'
+        
+    Raises:
+        HTTPException: Если товар не найден
+    """
+    crud = MarketplaceCRUD(db)
+    product = await crud.hide_product(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+@router.delete("/admin/products/{product_id}", status_code=204)
+async def delete_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Удалить товар (только для администраторов)
+    
+    - **product_id**: ID товара для удаления
+    
+    Returns:
+        None: Товар успешно удален
+        
+    Raises:
+        HTTPException: Если товар не найден
+    """
+    crud = MarketplaceCRUD(db)
+    if not await crud.delete_product(product_id):
+        raise HTTPException(status_code=404, detail="Product not found") 
