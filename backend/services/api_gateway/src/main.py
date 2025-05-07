@@ -2333,3 +2333,107 @@ async def create_marketplace_product(
     except Exception as e:
         logger.error(f"Error creating marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating marketplace product: {str(e)}")
+
+@app.post("/marketplace/admin/products/{product_id}/hide", tags=["Маркетплейс"])
+async def hide_marketplace_product(
+    product_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Скрыть товар (только для администраторов)
+    
+    - **product_id**: ID товара для скрытия
+    
+    Returns:
+        ProductResponse: Обновленный товар со статусом 'hidden'
+        
+    Raises:
+        HTTPException: Если товар не найден или нет прав администратора
+    """
+    # Проверяем права администратора
+    try:
+        response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if not response.json() or not response.json().get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can hide products")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    # Делаем запрос к сервису
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{MARKETPLACE_SERVICE_URL}/marketplace/admin/products/{product_id}/hide",
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.json().get("detail", "Unknown error")
+                raise HTTPException(status_code=response.status_code, detail=error_detail)
+                
+            data = response.json()
+            
+            # Инвалидируем кэш
+            cache_key = f"marketplace_product_{product_id}"
+            set_to_cache(cache_key, None, expire=1)
+            set_to_cache("marketplace_products_list", None, expire=1)
+            
+            return data
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Marketplace service timeout")
+    except Exception as e:
+        logger.error(f"Error hiding marketplace product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error hiding marketplace product: {str(e)}")
+
+@app.delete("/marketplace/admin/products/{product_id}", tags=["Маркетплейс"])
+async def delete_marketplace_product(
+    product_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Удалить товар (только для администраторов)
+    
+    - **product_id**: ID товара для удаления
+    
+    Returns:
+        None: Товар успешно удален
+        
+    Raises:
+        HTTPException: Если товар не найден или нет прав администратора
+    """
+    # Проверяем права администратора
+    try:
+        response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if not response.json() or not response.json().get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can delete products")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    # Делаем запрос к сервису
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{MARKETPLACE_SERVICE_URL}/marketplace/admin/products/{product_id}",
+                timeout=30.0
+            )
+            
+            if response.status_code != 204:
+                error_detail = response.json().get("detail", "Unknown error")
+                raise HTTPException(status_code=response.status_code, detail=error_detail)
+            
+            # Инвалидируем кэш
+            cache_key = f"marketplace_product_{product_id}"
+            set_to_cache(cache_key, None, expire=1)
+            set_to_cache("marketplace_products_list", None, expire=1)
+            
+            return Response(status_code=204)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Marketplace service timeout")
+    except Exception as e:
+        logger.error(f"Error deleting marketplace product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting marketplace product: {str(e)}")
