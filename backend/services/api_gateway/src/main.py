@@ -2133,7 +2133,7 @@ async def legacy_change_password(request: Request):
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
 
-@app.get("/api/marketplace/products", tags=["Маркетплейс"])
+@app.get("/marketplace/products", tags=["Маркетплейс"])
 async def get_marketplace_products(
     search: Optional[str] = None,
     category: Optional[str] = None,
@@ -2188,7 +2188,7 @@ async def get_marketplace_products(
         logger.error(f"Error getting marketplace products: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting marketplace products: {str(e)}")
 
-@app.get("/api/marketplace/products/{product_id}", tags=["Маркетплейс"])
+@app.get("/marketplace/products/{product_id}", tags=["Маркетплейс"])
 async def get_marketplace_product(product_id: int):
     """
     Получить детальную информацию о товаре по ID
@@ -2215,7 +2215,7 @@ async def get_marketplace_product(product_id: int):
         logger.error(f"Error getting marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting marketplace product: {str(e)}")
 
-@app.post("/api/marketplace/products", tags=["Маркетплейс"])
+@app.post("/marketplace/products", tags=["Маркетплейс"])
 async def create_marketplace_product(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
