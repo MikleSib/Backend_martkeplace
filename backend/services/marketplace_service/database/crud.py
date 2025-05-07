@@ -56,7 +56,7 @@ class MarketplaceCRUD:
         sort: Optional[str] = None
     ) -> Dict[str, Any]:
         # Базовый запрос для фильтрации
-        base_query = select(Product)
+        base_query = select(Product).where(Product.status != "out-of-stock")
         
         # Применяем фильтры
         if search:
@@ -84,7 +84,7 @@ class MarketplaceCRUD:
         total = len(result.scalars().all())
         
         # Создаем запрос для получения продуктов со связанными данными
-        query = select(Product).options(selectinload(Product.company))
+        query = select(Product).options(selectinload(Product.company)).where(Product.status != "out-of-stock")
         
         # Применяем те же фильтры
         if search:
@@ -161,7 +161,7 @@ class MarketplaceCRUD:
     
     async def hide_product(self, product_id: int) -> Optional[Product]:
         """
-        Скрывает товар, устанавливая статус 'hidden'
+        Скрывает товар, устанавливая статус 'out-of-stock'
         
         Args:
             product_id (int): ID товара для скрытия
@@ -173,7 +173,7 @@ class MarketplaceCRUD:
         if not product:
             return None
         
-        product.status = "hidden"
+        product.status = "out-of-stock"
         await self.db.commit()
         
         # Загружаем обновленный продукт со связанной компанией
