@@ -2218,20 +2218,20 @@ async def get_marketplace_product(product_id: int):
 class CompanyBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=1000)
-    website: Optional[HttpUrl] = None
-    logo_url: Optional[HttpUrl] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
 
 class ProductCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     price: float = Field(..., gt=0)
     old_price: Optional[float] = Field(None, gt=0)
     discount: Optional[float] = Field(None, ge=0, le=100)
-    image_url: HttpUrl
+    image_url: str
     category: str = Field(..., min_length=1, max_length=100)
     brand: Optional[str] = Field(None, max_length=100)
     status: str = Field(..., pattern='^(В наличии|Нет в наличии|Распродажа)$')
     rating: Optional[float] = Field(None, ge=0, le=5)
-    external_url: Optional[HttpUrl] = None
+    external_url: Optional[str] = None
     store: str = Field(..., pattern='^(Ozon|Wildberries|Aliexpress|Другие)$')
     description: Optional[str] = Field(None, max_length=5000)
     company: Optional[CompanyBase] = None
@@ -2248,6 +2248,13 @@ class ProductCreate(BaseModel):
             calculated_discount = ((values['old_price'] - values['price']) / values['old_price']) * 100
             if abs(v - calculated_discount) > 0.01:  # Учитываем погрешность округления
                 raise ValueError('discount does not match price and old_price')
+        return v
+
+    @validator('image_url', 'external_url', 'website', 'logo_url')
+    def validate_url(cls, v):
+        if v is not None:
+            if not v.startswith(('http://', 'https://')):
+                raise ValueError('URL must start with http:// or https://')
         return v
 
 @app.post("/marketplace/products", tags=["Маркетплейс"])
