@@ -102,31 +102,60 @@ def check_route_enabled(route: str) -> bool:
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        response = requests.get(
-            f"{AUTH_SERVICE_URL}/auth/check_token",
-            params={"token": credentials.credentials}
-        )
-        if not response.json():
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return response.json()["user_id"]
+        logger.info(f"Verifying token: {credentials.credentials[:10]}...")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{AUTH_SERVICE_URL}/auth/check_token",
+                params={"token": credentials.credentials}
+            )
+            logger.info(f"Auth service response status: {response.status_code}")
+            logger.info(f"Auth service response content: {response.text}")
+            
+            if response.status_code != 200:
+                logger.error(f"Invalid response status from auth service: {response.status_code}")
+                raise HTTPException(status_code=401, detail="Invalid token")
+            
+            data = response.json()
+            if not data:
+                logger.error("Empty response from auth service")
+                raise HTTPException(status_code=401, detail="Invalid token")
+            
+            logger.info(f"Token verification successful for user_id: {data.get('user_id')}")
+            return data["user_id"]
     except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
 async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        response = requests.get(
-            f"{AUTH_SERVICE_URL}/auth/check_token",
-            params={"token": credentials.credentials}
-        )
-        if not response.json():
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
-        user_data = response.json()
-        if not user_data.get("is_admin", False):
-            raise HTTPException(status_code=403, detail="Not authorized as admin")
+        logger.info(f"Verifying admin token: {credentials.credentials[:10]}...")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{AUTH_SERVICE_URL}/auth/check_token",
+                params={"token": credentials.credentials}
+            )
+            logger.info(f"Auth service response status: {response.status_code}")
+            logger.info(f"Auth service response content: {response.text}")
             
-        return credentials.credentials  
+            if response.status_code != 200:
+                logger.error(f"Invalid response status from auth service: {response.status_code}")
+                raise HTTPException(status_code=401, detail="Invalid token")
+            
+            user_data = response.json()
+            if not user_data:
+                logger.error("Empty response from auth service")
+                raise HTTPException(status_code=401, detail="Invalid token")
+            
+            logger.info(f"User data from auth service: {user_data}")
+            
+            if not user_data.get("is_admin", False):
+                logger.error(f"User {user_data.get('user_id')} is not an admin")
+                raise HTTPException(status_code=403, detail="Not authorized as admin")
+            
+            logger.info(f"Admin verification successful for user_id: {user_data.get('user_id')}")
+            return credentials.credentials
     except Exception as e:
+        logger.error(f"Admin verification error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def handle_service_response(response, error_prefix: str):
