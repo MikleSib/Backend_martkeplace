@@ -11,6 +11,7 @@ services:
       - news_service
       - admin_service
       - forum_service
+      - marketplace_service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -96,6 +97,24 @@ services:
       timeout: 10s
       retries: 3
 
+  marketplace_service:
+    build:
+      context: ./backend/services/marketplace_service
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db_marketplace:5432/db_marketplace
+      FORCE_DB_RECREATE: ${FORCE_DB_RECREATE:-false}
+    depends_on:
+      db_marketplace:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  
   db_user:
     image: postgres:16
     environment:
@@ -213,6 +232,22 @@ services:
       timeout: 5s
       retries: 5
 
+  db_marketplace:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: db_marketplace
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5437:5432"
+    volumes:
+      - db_marketplace_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d db_marketplace"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   admin_service:
     build:
       context: ./backend/services/admin_service
@@ -258,3 +293,4 @@ volumes:
   file_service_data:
   db_news_data:
   db_forum_data:
+  db_marketplace_data:

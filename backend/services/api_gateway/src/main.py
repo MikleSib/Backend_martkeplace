@@ -52,6 +52,7 @@ FILE_SERVICE_URL = "http://file_service:8005"
 NEWS_SERVICE_URL = "http://news_service:8006"
 MAIL_SERVICE_URL = "http://mail_service:8008"
 FORUM_SERVICE_URL = "http://forum_service:8009"
+MARKETPLACE_SERVICE_URL = "http://marketplace_service:8010"
 
 SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
@@ -61,7 +62,8 @@ SERVICE_URLS = {
     "file": FILE_SERVICE_URL,
     "news": NEWS_SERVICE_URL,
     "mail": MAIL_SERVICE_URL,
-    "forum": FORUM_SERVICE_URL
+    "forum": FORUM_SERVICE_URL,
+    "marketplace": MARKETPLACE_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -453,6 +455,7 @@ async def get_post(post_id: int):
         if "author" not in post_data and "author_id" in post_data:
             try:
                 author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post_data['author_id']}")
+                logger.info(f"Author response: {author_response.json()}")
                 if author_response.status_code == 200:
                     post_data['author'] = author_response.json()
                 else:
@@ -2129,3 +2132,123 @@ async def legacy_change_password(request: Request):
 # Для запуска сервиса напрямую через Python
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
+@app.get("/api/marketplace/products", tags=["Маркетплейс"])
+async def get_marketplace_products(
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    brand: Optional[str] = None,
+    store: Optional[str] = None,
+    sort: Optional[str] = None,
+    page: int = 1,
+    limit: int = 30
+):
+    """
+    Получить список товаров с применением фильтров, сортировки и пагинации
+    
+    - **search**: Поиск по названию, бренду, категории
+    - **category**: Фильтрация по категории товара
+    - **brand**: Фильтрация по бренду товара
+    - **store**: Фильтрация по маркетплейсу (ozon, wildberries, aliexpress, other)
+    - **sort**: Сортировка (price-asc, price-desc, rating, discount)
+    - **page**: Номер страницы (начинается с 1)
+    - **limit**: Количество товаров на странице (по умолчанию 30)
+    """
+    
+    # Создаем параметры запроса, исключая None значения
+    params = {k: v for k, v in {
+        'search': search,
+        'category': category,
+        'brand': brand,
+        'store': store,
+        'sort': sort,
+        'page': page,
+        'limit': limit
+    }.items() if v is not None}
+    
+    # Получаем данные из кэша, если они там есть
+    cache_key = f"marketplace_products_{search}_{category}_{brand}_{store}_{sort}_{page}_{limit}"
+    cached_data = get_from_cache(cache_key)
+    if cached_data:
+        return cached_data
+    
+    # Если данных в кэше нет, делаем запрос к сервису
+    try:
+        response = requests.get(
+            f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
+            params=params
+        )
+        data = handle_service_response(response, "Failed to get products from marketplace")
+        
+        # Кэшируем результат на 5 минут
+        set_to_cache(cache_key, data, expire=300)
+        
+        return data
+    except Exception as e:
+        logger.error(f"Error getting marketplace products: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting marketplace products: {str(e)}")
+
+@app.get("/api/marketplace/products/{product_id}", tags=["Маркетплейс"])
+async def get_marketplace_product(product_id: int):
+    """
+    Получить детальную информацию о товаре по ID
+    """
+    
+    # Получаем данные из кэша, если они там есть
+    cache_key = f"marketplace_product_{product_id}"
+    cached_data = get_from_cache(cache_key)
+    if cached_data:
+        return cached_data
+    
+    # Если данных в кэше нет, делаем запрос к сервису
+    try:
+        response = requests.get(
+            f"{MARKETPLACE_SERVICE_URL}/marketplace/products/{product_id}"
+        )
+        data = handle_service_response(response, "Failed to get product from marketplace")
+        
+        # Кэшируем результат на 15 минут
+        set_to_cache(cache_key, data, expire=900)
+        
+        return data
+    except Exception as e:
+        logger.error(f"Error getting marketplace product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting marketplace product: {str(e)}")
+
+@app.post("/api/marketplace/products", tags=["Маркетплейс"])
+async def create_marketplace_product(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Создать новый товар (тестовый метод, требует аутентификации)
+    """
+    # Проверяем права администратора
+    try:
+        response = requests.get(
+            f"{AUTH_SERVICE_URL}/auth/check_token",
+            params={"token": credentials.credentials}
+        )
+        if not response.json() or not response.json().get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Only administrators can add products")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    # Получаем данные из запроса
+    product_data = await request.json()
+    
+    # Делаем запрос к сервису
+    try:
+        response = requests.post(
+            f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
+            json=product_data
+        )
+        data = handle_service_response(response, "Failed to create product in marketplace")
+        
+        # Инвалидируем кэш списка продуктов
+        set_to_cache("marketplace_products_list", None, expire=1)
+        
+        return data
+    except Exception as e:
+        logger.error(f"Error creating marketplace product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating marketplace product: {str(e)}")

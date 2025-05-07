@@ -102,6 +102,7 @@ class PostCRUD:
         
         for post in posts:
             author_info = await self.get_user_info(post.author_id)
+            
             if author_info:
                 post.author_info = author_info
                 

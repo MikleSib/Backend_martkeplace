@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "marketplace-service"
+version = "0.1.0"
+description = "Сервис маркетплейса для интеграции с внешними торговыми площадками"
+authors = ["Mikhail Trofimov"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.12"
+sqlalchemy = "^2.0.40"
+uvicorn = "^0.34.2"
+pydantic = "^2.11.3"
+psycopg2-binary = "^2.9.10"
+asyncpg = "^0.30.0"
+requests = "^2.31.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api" 
