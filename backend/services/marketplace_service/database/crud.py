@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc, asc, or_
+from sqlalchemy.orm import selectinload
 from typing import List, Optional, Dict, Any
 from .models import Product, Company
 
@@ -24,16 +25,23 @@ class MarketplaceCRUD:
                 company = Company(product_id=product.id, **company_data)
                 self.db.add(company)
                 await self.db.commit()
-                await self.db.refresh(product)
             
-            return product
+            # Загружаем продукт со связанной компанией
+            result = await self.db.execute(
+                select(Product)
+                .options(selectinload(Product.company))
+                .where(Product.id == product.id)
+            )
+            return result.scalars().first()
         except Exception as e:
             await self.db.rollback()
             raise e
     
     async def get_product(self, product_id: int) -> Optional[Product]:
         result = await self.db.execute(
-            select(Product).where(Product.id == product_id)
+            select(Product)
+            .options(selectinload(Product.company))
+            .where(Product.id == product_id)
         )
         return result.scalars().first()
     
@@ -47,7 +55,7 @@ class MarketplaceCRUD:
         store: Optional[str] = None,
         sort: Optional[str] = None
     ) -> Dict[str, Any]:
-        query = select(Product)
+        query = select(Product).options(selectinload(Product.company))
         
         # Применяем фильтры
         if search:
@@ -118,8 +126,14 @@ class MarketplaceCRUD:
             self.db.add(company)
         
         await self.db.commit()
-        await self.db.refresh(product)
-        return product
+        
+        # Загружаем обновленный продукт со связанной компанией
+        result = await self.db.execute(
+            select(Product)
+            .options(selectinload(Product.company))
+            .where(Product.id == product_id)
+        )
+        return result.scalars().first()
     
     async def delete_product(self, product_id: int) -> bool:
         product = await self.get_product(product_id)
