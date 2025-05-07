@@ -2264,7 +2264,7 @@ async def get_marketplace_filters():
 @app.post("/marketplace/admin/products/{product_id}/hide", tags=["Маркетплейс"])
 async def hide_marketplace_product(
     product_id: int,
-    token: str = Depends(get_token)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
     Скрыть товар (только для администраторов)
@@ -2272,13 +2272,13 @@ async def hide_marketplace_product(
     - **product_id**: ID товара для скрытия
     """
     # Проверяем токен и права администратора
-    await verify_admin(token)
+    await verify_admin(credentials)
     
     # Отправляем запрос в сервис маркетплейса
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{MARKETPLACE_SERVICE_URL}/marketplace/admin/products/{product_id}/hide",
-            headers={"Authorization": f"Bearer {token}"}
+            headers={"Authorization": f"Bearer {credentials.credentials}"}
         )
         
         if response.status_code == 404:
@@ -2290,7 +2290,7 @@ async def hide_marketplace_product(
 @app.delete("/marketplace/admin/products/{product_id}", tags=["Маркетплейс"])
 async def delete_marketplace_product(
     product_id: int,
-    token: str = Depends(get_token)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
     Удалить товар (только для администраторов)
@@ -2298,13 +2298,13 @@ async def delete_marketplace_product(
     - **product_id**: ID товара для удаления
     """
     # Проверяем токен и права администратора
-    await verify_admin(token)
+    await verify_admin(credentials)
     
     # Отправляем запрос в сервис маркетплейса
     async with httpx.AsyncClient() as client:
         response = await client.delete(
             f"{MARKETPLACE_SERVICE_URL}/marketplace/admin/products/{product_id}",
-            headers={"Authorization": f"Bearer {token}"}
+            headers={"Authorization": f"Bearer {credentials.credentials}"}
         )
         
         if response.status_code == 404:
