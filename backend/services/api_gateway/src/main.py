@@ -8,7 +8,7 @@ from .config import *
 import logging
 from fastapi.responses import StreamingResponse
 import io
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, HttpUrl, validator
 from typing import List, Optional
 from pydantic import EmailStr
 import random
@@ -2215,13 +2215,62 @@ async def get_marketplace_product(product_id: int):
         logger.error(f"Error getting marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting marketplace product: {str(e)}")
 
+class CompanyBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=1000)
+    website: Optional[HttpUrl] = None
+    logo_url: Optional[HttpUrl] = None
+
+class ProductCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    price: float = Field(..., gt=0)
+    old_price: Optional[float] = Field(None, gt=0)
+    discount: Optional[float] = Field(None, ge=0, le=100)
+    image_url: HttpUrl
+    category: str = Field(..., min_length=1, max_length=100)
+    brand: str = Field(..., min_length=1, max_length=100)
+    status: str = Field(..., regex='^(active|inactive|draft)$')
+    rating: Optional[float] = Field(None, ge=0, le=5)
+    external_url: Optional[HttpUrl] = None
+    store: str = Field(..., regex='^(ozon|wildberries|aliexpress|other)$')
+    description: Optional[str] = Field(None, max_length=5000)
+    company: Optional[CompanyBase] = None
+
+    @validator('old_price')
+    def old_price_must_be_greater_than_price(cls, v, values):
+        if v is not None and 'price' in values and v <= values['price']:
+            raise ValueError('old_price must be greater than price')
+        return v
+
+    @validator('discount')
+    def validate_discount(cls, v, values):
+        if v is not None and 'old_price' in values and 'price' in values:
+            calculated_discount = ((values['old_price'] - values['price']) / values['old_price']) * 100
+            if abs(v - calculated_discount) > 0.01:  # Учитываем погрешность округления
+                raise ValueError('discount does not match price and old_price')
+        return v
+
 @app.post("/marketplace/products", tags=["Маркетплейс"])
 async def create_marketplace_product(
-    request: Request,
+    product: ProductCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Создать новый товар (тестовый метод, требует аутентификации)
+    Создать новый товар (требует аутентификации администратора)
+    
+    - **title**: Название товара
+    - **price**: Цена товара (должна быть больше 0)
+    - **old_price**: Старая цена (опционально, должна быть больше текущей цены)
+    - **discount**: Скидка в процентах (опционально, от 0 до 100)
+    - **image_url**: URL изображения товара
+    - **category**: Категория товара
+    - **brand**: Бренд товара
+    - **status**: Статус товара (active/inactive/draft)
+    - **rating**: Рейтинг товара (опционально, от 0 до 5)
+    - **external_url**: Внешняя ссылка на товар (опционально)
+    - **store**: Маркетплейс (ozon/wildberries/aliexpress/other)
+    - **description**: Описание товара (опционально)
+    - **company**: Информация о компании (опционально)
     """
     # Проверяем права администратора
     try:
@@ -2234,21 +2283,27 @@ async def create_marketplace_product(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    # Получаем данные из запроса
-    product_data = await request.json()
-    
     # Делаем запрос к сервису
     try:
-        response = requests.post(
-            f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
-            json=product_data
-        )
-        data = handle_service_response(response, "Failed to create product in marketplace")
-        
-        # Инвалидируем кэш списка продуктов
-        set_to_cache("marketplace_products_list", None, expire=1)
-        
-        return data
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
+                json=product.model_dump(exclude_none=True),
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.json().get("detail", "Unknown error")
+                raise HTTPException(status_code=response.status_code, detail=error_detail)
+                
+            data = response.json()
+            
+            # Инвалидируем кэш списка продуктов
+            set_to_cache("marketplace_products_list", None, expire=1)
+            
+            return data
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Marketplace service timeout")
     except Exception as e:
         logger.error(f"Error creating marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating marketplace product: {str(e)}")

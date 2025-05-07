@@ -73,10 +73,18 @@ async def create_product(
     """
     crud = MarketplaceCRUD(db)
     
-    # Преобразуем Pydantic модель в словарь и распаковываем его для передачи в create_product
-    product_data = product.model_dump()
-    
-    return await crud.create_product(**product_data)
+    try:
+        # Преобразуем Pydantic модель в словарь
+        product_data = product.model_dump()
+        
+        # Создаем товар
+        created_product = await crud.create_product(**product_data)
+        return created_product
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating marketplace product: {str(e)}"
+        )
 
 @router.put("/products/{product_id}", response_model=ProductResponse)
 async def update_product(

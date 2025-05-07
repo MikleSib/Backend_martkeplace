@@ -9,20 +9,27 @@ class MarketplaceCRUD:
         self.db = db
 
     async def create_product(self, **kwargs) -> Product:
-        company_data = kwargs.pop('company', None)
-        
-        product = Product(**kwargs)
-        self.db.add(product)
-        await self.db.commit()
-        await self.db.refresh(product)
-        
-        if company_data:
-            company = Company(product_id=product.id, **company_data)
-            self.db.add(company)
+        try:
+            # Извлекаем данные компании из kwargs
+            company_data = kwargs.pop('company', None)
+            
+            # Создаем продукт
+            product = Product(**kwargs)
+            self.db.add(product)
             await self.db.commit()
             await self.db.refresh(product)
             
-        return product
+            # Если есть данные компании, создаем запись компании
+            if company_data:
+                company = Company(product_id=product.id, **company_data)
+                self.db.add(company)
+                await self.db.commit()
+                await self.db.refresh(product)
+            
+            return product
+        except Exception as e:
+            await self.db.rollback()
+            raise e
     
     async def get_product(self, product_id: int) -> Optional[Product]:
         result = await self.db.execute(
