@@ -2257,20 +2257,6 @@ async def create_marketplace_product(
 ):
     """
     Создать новый товар (требует аутентификации администратора)
-    
-    - **title**: Название товара
-    - **price**: Цена товара (должна быть больше 0)
-    - **old_price**: Старая цена (опционально, должна быть больше текущей цены)
-    - **discount**: Скидка в процентах (опционально, от 0 до 100)
-    - **image_url**: URL изображения товара
-    - **category**: Категория товара
-    - **brand**: Бренд товара
-    - **status**: Статус товара (active/inactive/draft)
-    - **rating**: Рейтинг товара (опционально, от 0 до 5)
-    - **external_url**: Внешняя ссылка на товар (опционально)
-    - **store**: Маркетплейс (ozon/wildberries/aliexpress/other)
-    - **description**: Описание товара (опционально)
-    - **company**: Информация о компании (опционально)
     """
     # Проверяем права администратора
     try:
@@ -2285,10 +2271,21 @@ async def create_marketplace_product(
     
     # Делаем запрос к сервису
     try:
+        # Преобразуем модель в словарь и конвертируем HttpUrl в строки
+        product_data = product.model_dump(exclude_none=True)
+        if product_data.get("image_url"):
+            product_data["image_url"] = str(product_data["image_url"])
+        if product_data.get("external_url"):
+            product_data["external_url"] = str(product_data["external_url"])
+        if product_data.get("company") and product_data["company"].get("website"):
+            product_data["company"]["website"] = str(product_data["company"]["website"])
+        if product_data.get("company") and product_data["company"].get("logo_url"):
+            product_data["company"]["logo_url"] = str(product_data["company"]["logo_url"])
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
-                json=product.model_dump(exclude_none=True),
+                json=product_data,
                 timeout=30.0
             )
             
