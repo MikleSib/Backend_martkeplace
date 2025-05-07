@@ -9,6 +9,12 @@ import os
 
 router = APIRouter(prefix="/marketplace")
 
+async def get_crud(db: AsyncSession = Depends(get_db)) -> MarketplaceCRUD:
+    """
+    Зависимость для получения экземпляра MarketplaceCRUD
+    """
+    return MarketplaceCRUD(db)
+
 @router.get("/products", response_model=ProductsListResponse)
 async def get_products(
     search: Optional[str] = None,

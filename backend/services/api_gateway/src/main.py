@@ -2188,6 +2188,12 @@ async def get_marketplace_products(
         logger.error(f"Error getting marketplace products: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting marketplace products: {str(e)}")
 
+async def get_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """
+    Получает токен из заголовка Authorization
+    """
+    return credentials.credentials
+
 @app.get("/marketplace/products/{product_id}", tags=["Маркетплейс"])
 async def get_marketplace_product(
     product_id: int,
