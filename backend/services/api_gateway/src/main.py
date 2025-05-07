@@ -2273,14 +2273,52 @@ async def create_marketplace_product(
     try:
         # Преобразуем модель в словарь и конвертируем HttpUrl в строки
         product_data = product.model_dump(exclude_none=True)
-        if product_data.get("image_url"):
-            product_data["image_url"] = str(product_data["image_url"])
-        if product_data.get("external_url"):
+        
+        # Преобразуем статус
+        status_mapping = {
+            "В наличии": "in-stock",
+            "Нет в наличии": "out-of-stock",
+            "Распродажа": "sale"
+        }
+        product_data["status"] = status_mapping.get(product_data["status"], "in-stock")
+        
+        # Преобразуем store
+        store_mapping = {
+            "Ozon": "ozon",
+            "Wildberries": "wildberries",
+            "Aliexpress": "aliexpress",
+            "Другие": "other"
+        }
+        product_data["store"] = store_mapping.get(product_data["store"], "other")
+        
+        # Переименовываем image_url в image
+        if "image_url" in product_data:
+            product_data["image"] = str(product_data["image_url"])
+            del product_data["image_url"]
+        
+        # Преобразуем external_url
+        if "external_url" in product_data:
             product_data["external_url"] = str(product_data["external_url"])
-        if product_data.get("company") and product_data["company"].get("website"):
-            product_data["company"]["website"] = str(product_data["company"]["website"])
-        if product_data.get("company") and product_data["company"].get("logo_url"):
-            product_data["company"]["logo_url"] = str(product_data["company"]["logo_url"])
+        
+        # Добавляем обязательные поля для company
+        if "company" in product_data:
+            company = product_data["company"]
+            if "website" in company:
+                company["website"] = str(company["website"])
+            if "logo_url" in company:
+                company["logo_url"] = str(company["logo_url"])
+            
+            # Добавляем обязательные поля, если их нет
+            if "rating" not in company:
+                company["rating"] = 0
+            if "products_count" not in company:
+                company["products_count"] = 0
+            if "is_premium" not in company:
+                company["is_premium"] = False
+            if "has_ozon_delivery" not in company:
+                company["has_ozon_delivery"] = False
+            if "return_period" not in company:
+                company["return_period"] = 14
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
