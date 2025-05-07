@@ -55,9 +55,38 @@ class MarketplaceCRUD:
         store: Optional[str] = None,
         sort: Optional[str] = None
     ) -> Dict[str, Any]:
-        query = select(Product).options(selectinload(Product.company))
+        # Базовый запрос для фильтрации
+        base_query = select(Product)
         
         # Применяем фильтры
+        if search:
+            search_term = f"%{search}%"
+            base_query = base_query.where(
+                or_(
+                    Product.title.ilike(search_term),
+                    Product.brand.ilike(search_term),
+                    Product.category.ilike(search_term)
+                )
+            )
+        
+        if category:
+            base_query = base_query.where(Product.category == category)
+            
+        if brand:
+            base_query = base_query.where(Product.brand == brand)
+            
+        if store:
+            base_query = base_query.where(Product.store == store)
+        
+        # Получаем общее количество записей для пагинации
+        count_query = select(Product.id).select_from(base_query.subquery())
+        result = await self.db.execute(count_query)
+        total = len(result.scalars().all())
+        
+        # Создаем запрос для получения продуктов со связанными данными
+        query = select(Product).options(selectinload(Product.company))
+        
+        # Применяем те же фильтры
         if search:
             search_term = f"%{search}%"
             query = query.where(
@@ -76,11 +105,6 @@ class MarketplaceCRUD:
             
         if store:
             query = query.where(Product.store == store)
-        
-        # Получаем общее количество записей для пагинации
-        count_query = query
-        result = await self.db.execute(count_query)
-        total = len(result.scalars().all())
         
         # Применяем сортировку
         if sort:
