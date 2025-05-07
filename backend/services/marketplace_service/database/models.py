@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, Index, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, Index, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -21,8 +21,8 @@ class Product(Base):
     external_url = Column(String(255), nullable=False)
     store = Column(String(20), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    created_at = Column(String, default=datetime.utcnow)
-    updated_at = Column(String, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     company = relationship("Company", back_populates="products", cascade="all, delete-orphan", uselist=False)
 
