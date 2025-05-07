@@ -2260,6 +2260,23 @@ async def create_marketplace_product(
         # Преобразуем модель в словарь
         product_data = product.model_dump(exclude_none=True)
         
+        # Преобразуем статус
+        status_mapping = {
+            "В наличии": "in-stock",
+            "Нет в наличии": "out-of-stock",
+            "Распродажа": "sale"
+        }
+        product_data["status"] = status_mapping.get(product_data["status"], "in-stock")
+        
+        # Преобразуем store
+        store_mapping = {
+            "Ozon": "ozon",
+            "Wildberries": "wildberries",
+            "Aliexpress": "aliexpress",
+            "Другие": "other"
+        }
+        product_data["store"] = store_mapping.get(product_data["store"], "other")
+        
         # Переименовываем image_url в image
         if "image_url" in product_data:
             product_data["image"] = product_data["image_url"]
