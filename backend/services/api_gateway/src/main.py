@@ -2277,20 +2277,22 @@ async def create_marketplace_product(
         }
         product_data["store"] = store_mapping.get(product_data["store"], "other")
         
-        # Переименовываем image_url в image
+        # Переименовываем image_url в image и преобразуем в строку
         if "image_url" in product_data:
-            product_data["image"] = product_data["image_url"]
+            product_data["image"] = str(product_data["image_url"])
             del product_data["image_url"]
+            
+        # Преобразуем external_url в строку
+        if "external_url" in product_data:
+            product_data["external_url"] = str(product_data["external_url"])
+            
+        # Преобразуем URL в company
+        if "company" in product_data and product_data["company"]:
+            if "website" in product_data["company"]:
+                product_data["company"]["website"] = str(product_data["company"]["website"])
+            if "logo_url" in product_data["company"]:
+                product_data["company"]["logo_url"] = str(product_data["company"]["logo_url"])
         
-        # Добавляем обязательные поля для company
-        if "company" in product_data:
-            company = product_data["company"]
-            company["rating"] = 0
-            company["products_count"] = 0
-            company["is_premium"] = False
-            company["has_ozon_delivery"] = False
-            company["return_period"] = 14
-
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{MARKETPLACE_SERVICE_URL}/marketplace/products",
