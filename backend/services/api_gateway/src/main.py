@@ -2228,7 +2228,7 @@ class ProductCreate(BaseModel):
     discount: Optional[float] = Field(None, ge=0, le=100)
     image_url: HttpUrl
     category: str = Field(..., min_length=1, max_length=100)
-    brand: str = Field(..., min_length=1, max_length=100)
+    brand: Optional[str] = Field(None, max_length=100)
     status: str = Field(..., pattern='^(active|inactive|draft)$')
     rating: Optional[float] = Field(None, ge=0, le=5)
     external_url: Optional[HttpUrl] = None
