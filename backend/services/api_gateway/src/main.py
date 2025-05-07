@@ -2195,21 +2195,14 @@ async def get_token(credentials: HTTPAuthorizationCredentials = Depends(security
     return credentials.credentials
 
 @app.get("/marketplace/products/{product_id}", tags=["Маркетплейс"])
-async def get_marketplace_product(
-    product_id: int,
-    token: str = Depends(get_token)
-):
+async def get_marketplace_product(product_id: int):
     """
     Получить информацию о конкретном товаре
     """
-    # Проверяем токен
-    await verify_token(token)
-    
     # Получаем данные из сервиса маркетплейса
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{MARKETPLACE_SERVICE_URL}/products/{product_id}",
-            headers={"Authorization": f"Bearer {token}"}
+            f"{MARKETPLACE_SERVICE_URL}/marketplace/products/{product_id}"
         )
         
         if response.status_code == 404:
