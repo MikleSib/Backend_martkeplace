@@ -2285,6 +2285,10 @@ async def hide_marketplace_product(
             raise HTTPException(status_code=404, detail="Product not found")
         response.raise_for_status()
         
+        # Если статус 204 (No Content), возвращаем сообщение об успехе
+        if response.status_code == 204:
+            return {"message": "Product successfully hidden"}
+            
         return response.json()
 
 @app.delete("/marketplace/admin/products/{product_id}", tags=["Маркетплейс"])
@@ -2311,4 +2315,8 @@ async def delete_marketplace_product(
             raise HTTPException(status_code=404, detail="Product not found")
         response.raise_for_status()
         
+        # Если статус 204 (No Content), возвращаем сообщение об успехе
+        if response.status_code == 204:
+            return {"message": "Product successfully deleted"}
+            
         return response.json()
