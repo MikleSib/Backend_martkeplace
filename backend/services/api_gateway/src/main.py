@@ -2291,12 +2291,12 @@ async def create_marketplace_product(
         }
         product_data["store"] = store_mapping.get(product_data["store"], "other")
         
-        # Переименовываем image_url в image
+        # Переименовываем image_url в image и преобразуем в строку
         if "image_url" in product_data:
             product_data["image"] = str(product_data["image_url"])
             del product_data["image_url"]
         
-        # Преобразуем external_url
+        # Преобразуем external_url в строку
         if "external_url" in product_data:
             product_data["external_url"] = str(product_data["external_url"])
         
@@ -2319,6 +2319,18 @@ async def create_marketplace_product(
                 company["has_ozon_delivery"] = False
             if "return_period" not in company:
                 company["return_period"] = 14
+
+        # Преобразуем все HttpUrl объекты в строки
+        def convert_urls_to_strings(data):
+            if isinstance(data, dict):
+                return {k: convert_urls_to_strings(v) for k, v in data.items()}
+            elif isinstance(data, list):
+                return [convert_urls_to_strings(item) for item in data]
+            elif hasattr(data, 'url'):  # Проверяем, является ли объект HttpUrl
+                return str(data)
+            return data
+
+        product_data = convert_urls_to_strings(product_data)
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
