@@ -2292,6 +2292,19 @@ async def create_marketplace_product(
                 product_data["company"]["website"] = str(product_data["company"]["website"])
             if "logo_url" in product_data["company"]:
                 product_data["company"]["logo_url"] = str(product_data["company"]["logo_url"])
+                
+            # Добавляем обязательные поля для company
+            company = product_data["company"]
+            if "rating" not in company:
+                company["rating"] = 0
+            if "products_count" not in company:
+                company["products_count"] = 0
+            if "is_premium" not in company:
+                company["is_premium"] = False
+            if "has_ozon_delivery" not in company:
+                company["has_ozon_delivery"] = False
+            if "return_period" not in company:
+                company["return_period"] = 14
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
