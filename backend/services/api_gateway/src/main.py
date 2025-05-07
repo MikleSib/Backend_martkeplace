@@ -2233,7 +2233,7 @@ async def get_marketplace_filters():
     # Получаем данные из сервиса маркетплейса
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{MARKETPLACE_SERVICE_URL}/filters"
+            f"{MARKETPLACE_SERVICE_URL}/marketplace/filters"
         )
         response.raise_for_status()
         
