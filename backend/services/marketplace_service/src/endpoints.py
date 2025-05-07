@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Security
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from database import get_db, MarketplaceCRUD
 from config import (
     ProductCreate, ProductUpdate, ProductResponse, ProductsListResponse
@@ -48,19 +48,22 @@ async def get_products(
     )
 
 @router.get("/products/{product_id}", response_model=ProductResponse)
-async def get_product(
-    product_id: int,
-    db: AsyncSession = Depends(get_db)
-):
+async def get_product(product_id: int, crud: MarketplaceCRUD = Depends(get_crud)):
     """
-    Получить детальную информацию о товаре по ID
+    Получает информацию о конкретном товаре
+    
+    Args:
+        product_id (int): ID товара
+        
+    Returns:
+        ProductResponse: Информация о товаре
+        
+    Raises:
+        HTTPException: Если товар не найден
     """
-    crud = MarketplaceCRUD(db)
     product = await crud.get_product(product_id)
-    
     if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
-    
+        raise HTTPException(status_code=404, detail="Product not found")
     return product
 
 @router.post("/products", response_model=ProductResponse)
@@ -169,4 +172,18 @@ async def delete_product(
     """
     crud = MarketplaceCRUD(db)
     if not await crud.delete_product(product_id):
-        raise HTTPException(status_code=404, detail="Product not found") 
+        raise HTTPException(status_code=404, detail="Product not found")
+
+@router.get("/filters", response_model=Dict[str, Any])
+async def get_filters(crud: MarketplaceCRUD = Depends(get_crud)):
+    """
+    Получает актуальные фильтры для фронтенда
+    
+    Returns:
+        Dict[str, Any]: Словарь с фильтрами:
+            - categories: List[str] - список уникальных категорий
+            - stores: List[str] - список уникальных магазинов
+            - marketplaces: List[str] - список уникальных маркетплейсов
+            - price_range: Dict[str, float] - минимальная и максимальная цена
+    """
+    return await crud.get_filters() 

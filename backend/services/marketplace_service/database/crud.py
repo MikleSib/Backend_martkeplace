@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc, asc, or_
+from sqlalchemy import desc, asc, or_, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional, Dict, Any
 from .models import Product, Company
@@ -200,4 +200,50 @@ class MarketplaceCRUD:
         
         await self.db.delete(product)
         await self.db.commit()
-        return True 
+        return True
+
+    async def get_filters(self) -> Dict[str, Any]:
+        """
+        Получает актуальные фильтры для фронтенда
+        
+        Returns:
+            Dict[str, Any]: Словарь с фильтрами:
+                - categories: List[str] - список уникальных категорий
+                - stores: List[str] - список уникальных магазинов
+                - marketplaces: List[str] - список уникальных маркетплейсов
+                - price_range: Dict[str, float] - минимальная и максимальная цена
+        """
+        # Получаем уникальные категории
+        categories_query = select(Product.category).distinct().where(Product.status != "out-of-stock")
+        categories_result = await self.db.execute(categories_query)
+        categories = [row[0] for row in categories_result.all() if row[0]]
+
+        # Получаем уникальные магазины
+        stores_query = select(Product.store).distinct().where(Product.status != "out-of-stock")
+        stores_result = await self.db.execute(stores_query)
+        stores = [row[0] for row in stores_result.all() if row[0]]
+
+        # Получаем уникальные маркетплейсы
+        marketplaces_query = select(Product.marketplace).distinct().where(Product.status != "out-of-stock")
+        marketplaces_result = await self.db.execute(marketplaces_query)
+        marketplaces = [row[0] for row in marketplaces_result.all() if row[0]]
+
+        # Получаем минимальную и максимальную цены
+        price_query = select(
+            func.min(Product.price).label('min_price'),
+            func.max(Product.price).label('max_price')
+        ).where(Product.status != "out-of-stock")
+        price_result = await self.db.execute(price_query)
+        price_row = price_result.first()
+        
+        price_range = {
+            "min": float(price_row.min_price) if price_row.min_price else 0.0,
+            "max": float(price_row.max_price) if price_row.max_price else 0.0
+        }
+
+        return {
+            "categories": categories,
+            "stores": stores,
+            "marketplaces": marketplaces,
+            "price_range": price_range
+        } 

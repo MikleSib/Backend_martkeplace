@@ -9,7 +9,7 @@ import logging
 from fastapi.responses import StreamingResponse
 import io
 from pydantic import BaseModel, Field, HttpUrl, validator
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import EmailStr
 import random
 import aiohttp
@@ -2189,31 +2189,55 @@ async def get_marketplace_products(
         raise HTTPException(status_code=500, detail=f"Error getting marketplace products: {str(e)}")
 
 @app.get("/marketplace/products/{product_id}", tags=["Маркетплейс"])
-async def get_marketplace_product(product_id: int):
+async def get_marketplace_product(
+    product_id: int,
+    token: str = Depends(get_token)
+):
     """
-    Получить детальную информацию о товаре по ID
+    Получить информацию о конкретном товаре
     """
+    # Проверяем токен
+    await verify_token(token)
     
-    # Получаем данные из кэша, если они там есть
-    cache_key = f"marketplace_product_{product_id}"
-    cached_data = get_from_cache(cache_key)
-    if cached_data:
-        return cached_data
-    
-    # Если данных в кэше нет, делаем запрос к сервису
-    try:
-        response = requests.get(
-            f"{MARKETPLACE_SERVICE_URL}/marketplace/products/{product_id}"
+    # Получаем данные из сервиса маркетплейса
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{MARKETPLACE_SERVICE_URL}/products/{product_id}",
+            headers={"Authorization": f"Bearer {token}"}
         )
-        data = handle_service_response(response, "Failed to get product from marketplace")
         
-        # Кэшируем результат на 15 минут
-        set_to_cache(cache_key, data, expire=900)
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Product not found")
+        response.raise_for_status()
         
-        return data
-    except Exception as e:
-        logger.error(f"Error getting marketplace product: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting marketplace product: {str(e)}")
+        return response.json()
+
+@app.get("/marketplace/filters", response_model=Dict[str, Any])
+async def get_marketplace_filters(
+    token: str = Depends(get_token)
+):
+    """
+    Получить актуальные фильтры для фронтенда
+    
+    Returns:
+        Dict[str, Any]: Словарь с фильтрами:
+            - categories: List[str] - список уникальных категорий
+            - stores: List[str] - список уникальных магазинов
+            - marketplaces: List[str] - список уникальных маркетплейсов
+            - price_range: Dict[str, float] - минимальная и максимальная цена
+    """
+    # Проверяем токен
+    await verify_token(token)
+    
+    # Получаем данные из сервиса маркетплейса
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{MARKETPLACE_SERVICE_URL}/filters",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        response.raise_for_status()
+        
+        return response.json()
 
 class CompanyBase(BaseModel):
     name: str
