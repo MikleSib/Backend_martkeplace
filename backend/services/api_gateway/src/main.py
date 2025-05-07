@@ -2216,53 +2216,25 @@ async def get_marketplace_product(product_id: int):
         raise HTTPException(status_code=500, detail=f"Error getting marketplace product: {str(e)}")
 
 class CompanyBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=1000)
+    name: str
+    description: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
 
-    @validator('website', 'logo_url')
-    def validate_url(cls, v):
-        if v is not None:
-            if not v.startswith(('http://', 'https://')):
-                raise ValueError('URL must start with http:// or https://')
-        return v
-
 class ProductCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    price: float = Field(..., gt=0)
-    old_price: Optional[float] = Field(None, gt=0)
-    discount: Optional[float] = Field(None, ge=0, le=100)
+    title: str
+    price: float
+    old_price: Optional[float] = None
+    discount: Optional[float] = None
     image_url: str
-    category: str = Field(..., min_length=1, max_length=100)
-    brand: Optional[str] = Field(None, max_length=100)
-    status: str = Field(..., pattern='^(В наличии|Нет в наличии|Распродажа)$')
-    rating: Optional[float] = Field(None, ge=0, le=5)
+    category: str
+    brand: Optional[str] = None
+    status: str
+    rating: Optional[float] = None
     external_url: Optional[str] = None
-    store: str = Field(..., pattern='^(Ozon|Wildberries|Aliexpress|Другие)$')
-    description: Optional[str] = Field(None, max_length=5000)
+    store: str
+    description: Optional[str] = None
     company: Optional[CompanyBase] = None
-
-    @validator('old_price')
-    def old_price_must_be_greater_than_price(cls, v, values):
-        if v is not None and 'price' in values and v <= values['price']:
-            raise ValueError('old_price must be greater than price')
-        return v
-
-    @validator('discount')
-    def validate_discount(cls, v, values):
-        if v is not None and 'old_price' in values and 'price' in values:
-            calculated_discount = ((values['old_price'] - values['price']) / values['old_price']) * 100
-            if abs(v - calculated_discount) > 0.01:  # Учитываем погрешность округления
-                raise ValueError('discount does not match price and old_price')
-        return v
-
-    @validator('image_url', 'external_url')
-    def validate_url(cls, v):
-        if v is not None:
-            if not v.startswith(('http://', 'https://')):
-                raise ValueError('URL must start with http:// or https://')
-        return v
 
 @app.post("/marketplace/products", tags=["Маркетплейс"])
 async def create_marketplace_product(
@@ -2285,66 +2257,22 @@ async def create_marketplace_product(
     
     # Делаем запрос к сервису
     try:
-        # Преобразуем модель в словарь и конвертируем HttpUrl в строки
+        # Преобразуем модель в словарь
         product_data = product.model_dump(exclude_none=True)
         
-        # Преобразуем статус
-        status_mapping = {
-            "В наличии": "in-stock",
-            "Нет в наличии": "out-of-stock",
-            "Распродажа": "sale"
-        }
-        product_data["status"] = status_mapping.get(product_data["status"], "in-stock")
-        
-        # Преобразуем store
-        store_mapping = {
-            "Ozon": "ozon",
-            "Wildberries": "wildberries",
-            "Aliexpress": "aliexpress",
-            "Другие": "other"
-        }
-        product_data["store"] = store_mapping.get(product_data["store"], "other")
-        
-        # Переименовываем image_url в image и преобразуем в строку
+        # Переименовываем image_url в image
         if "image_url" in product_data:
-            product_data["image"] = str(product_data["image_url"])
+            product_data["image"] = product_data["image_url"]
             del product_data["image_url"]
-        
-        # Преобразуем external_url в строку
-        if "external_url" in product_data:
-            product_data["external_url"] = str(product_data["external_url"])
         
         # Добавляем обязательные поля для company
         if "company" in product_data:
             company = product_data["company"]
-            if "website" in company:
-                company["website"] = str(company["website"])
-            if "logo_url" in company:
-                company["logo_url"] = str(company["logo_url"])
-            
-            # Добавляем обязательные поля, если их нет
-            if "rating" not in company:
-                company["rating"] = 0
-            if "products_count" not in company:
-                company["products_count"] = 0
-            if "is_premium" not in company:
-                company["is_premium"] = False
-            if "has_ozon_delivery" not in company:
-                company["has_ozon_delivery"] = False
-            if "return_period" not in company:
-                company["return_period"] = 14
-
-        # Преобразуем все HttpUrl объекты в строки
-        def convert_urls_to_strings(data):
-            if isinstance(data, dict):
-                return {k: convert_urls_to_strings(v) for k, v in data.items()}
-            elif isinstance(data, list):
-                return [convert_urls_to_strings(item) for item in data]
-            elif hasattr(data, 'url'):  # Проверяем, является ли объект HttpUrl
-                return str(data)
-            return data
-
-        product_data = convert_urls_to_strings(product_data)
+            company["rating"] = 0
+            company["products_count"] = 0
+            company["is_premium"] = False
+            company["has_ozon_delivery"] = False
+            company["return_period"] = 14
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
