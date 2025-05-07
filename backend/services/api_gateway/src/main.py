@@ -2229,10 +2229,10 @@ class ProductCreate(BaseModel):
     image_url: HttpUrl
     category: str = Field(..., min_length=1, max_length=100)
     brand: str = Field(..., min_length=1, max_length=100)
-    status: str = Field(..., regex='^(active|inactive|draft)$')
+    status: str = Field(..., pattern='^(active|inactive|draft)$')
     rating: Optional[float] = Field(None, ge=0, le=5)
     external_url: Optional[HttpUrl] = None
-    store: str = Field(..., regex='^(ozon|wildberries|aliexpress|other)$')
+    store: str = Field(..., pattern='^(ozon|wildberries|aliexpress|other)$')
     description: Optional[str] = Field(None, max_length=5000)
     company: Optional[CompanyBase] = None
 
