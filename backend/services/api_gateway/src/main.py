@@ -2220,6 +2220,11 @@ class CompanyBase(BaseModel):
     description: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+    rating: Optional[float] = 0
+    products_count: Optional[int] = 0
+    is_premium: Optional[bool] = False
+    has_ozon_delivery: Optional[bool] = False
+    return_period: Optional[int] = 14
 
 class ProductCreate(BaseModel):
     title: str
@@ -2277,9 +2282,9 @@ async def create_marketplace_product(
         }
         product_data["store"] = store_mapping.get(product_data["store"], "other")
         
-        # Переименовываем image_url в image и преобразуем в строку
+        # Переименовываем image_url в image
         if "image_url" in product_data:
-            product_data["image"] = str(product_data["image_url"])
+            product_data["image"] = product_data["image_url"]
             del product_data["image_url"]
             
         # Преобразуем external_url в строку

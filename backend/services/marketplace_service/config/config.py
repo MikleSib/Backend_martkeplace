@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 class CompanyBase(BaseModel):
@@ -24,12 +24,12 @@ class ProductBase(BaseModel):
     price: float
     old_price: Optional[float] = None
     discount: Optional[int] = None
-    image: HttpUrl
+    image: str
     category: str
     brand: Optional[str] = None
     status: str = Field(..., pattern="^(in-stock|out-of-stock|sale)$")
     rating: float = Field(..., ge=0, le=5)
-    external_url: HttpUrl
+    external_url: str
     store: str = Field(..., pattern="^(ozon|wildberries|aliexpress|other)$")
     description: Optional[str] = None
 
@@ -41,12 +41,12 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     old_price: Optional[float] = None
     discount: Optional[int] = None
-    image: Optional[HttpUrl] = None
+    image: Optional[str] = None
     category: Optional[str] = None
     brand: Optional[str] = None
     status: Optional[str] = Field(None, pattern="^(in-stock|out-of-stock|sale)$")
     rating: Optional[float] = Field(None, ge=0, le=5)
-    external_url: Optional[HttpUrl] = None
+    external_url: Optional[str] = None
     store: Optional[str] = Field(None, pattern="^(ozon|wildberries|aliexpress|other)$")
     description: Optional[str] = None
     company: Optional[CompanyBase] = None
