@@ -2221,6 +2221,13 @@ class CompanyBase(BaseModel):
     website: Optional[str] = None
     logo_url: Optional[str] = None
 
+    @validator('website', 'logo_url')
+    def validate_url(cls, v):
+        if v is not None:
+            if not v.startswith(('http://', 'https://')):
+                raise ValueError('URL must start with http:// or https://')
+        return v
+
 class ProductCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     price: float = Field(..., gt=0)
@@ -2250,7 +2257,7 @@ class ProductCreate(BaseModel):
                 raise ValueError('discount does not match price and old_price')
         return v
 
-    @validator('image_url', 'external_url', 'website', 'logo_url')
+    @validator('image_url', 'external_url')
     def validate_url(cls, v):
         if v is not None:
             if not v.startswith(('http://', 'https://')):
