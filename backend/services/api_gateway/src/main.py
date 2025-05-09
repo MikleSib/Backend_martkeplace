@@ -2461,7 +2461,10 @@ async def vk_callback(
                 try:
                     error_data = token_response.json()
                     if "error" in error_data:
-                        error_detail = f"VK error: {error_data['error']} - {error_data.get('error_description', '')}"
+                        if error_data["error"] == "invalid_grant":
+                            error_detail = "Код авторизации истек или недействителен. Пожалуйста, попробуйте авторизоваться снова."
+                        else:
+                            error_detail = f"VK error: {error_data['error']} - {error_data.get('error_description', '')}"
                 except:
                     pass
                 raise HTTPException(
