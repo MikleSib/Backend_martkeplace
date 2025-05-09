@@ -20,6 +20,8 @@ from starlette.responses import Response, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import uuid
 import jwt
+import secrets
+import string
 
 app = FastAPI(
     title="API Gateway",
@@ -2419,6 +2421,15 @@ class VKUserData(BaseModel):
     photo_200: Optional[str] = None
     email: Optional[str] = None
 
+def generate_code_verifier(length: int = 43) -> str:
+    """
+    Генерирует code_verifier для PKCE.
+    Длина от 43 до 128 символов.
+    Символы: a-z, A-Z, 0-9, _, -
+    """
+    alphabet = string.ascii_letters + string.digits + '_-'
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
 @app.post("/auth/social/vk")
 async def vk_callback(
     code: str = Query(..., description="Код авторизации от VK"),
@@ -2443,6 +2454,10 @@ async def vk_callback(
         )
         
     try:
+        # Генерируем code_verifier
+        code_verifier = generate_code_verifier()
+        logger.info(f"Generated code_verifier: {code_verifier}")
+        
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
             token_url = "https://id.vk.com/oauth2/auth"
@@ -2453,7 +2468,8 @@ async def vk_callback(
                 "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
                 "code": code,
                 "grant_type": "authorization_code",
-                "device_id": device_id
+                "device_id": device_id,
+                "code_verifier": code_verifier
             }
             
             logger.info(f"Requesting VK token with params: {token_params}")
