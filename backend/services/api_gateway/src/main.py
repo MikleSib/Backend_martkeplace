@@ -2450,7 +2450,7 @@ async def vk_callback(
             token_params = {
                 "client_id": "53543107",
                 "client_secret": "jkkVgCawuyvAoJl5JVFk",
-                "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
+                "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
                 "code": code,
                 "grant_type": "authorization_code",
                 "device_id": device_id
