@@ -2418,7 +2418,7 @@ class VKUserData(BaseModel):
     photo_200: Optional[str] = None
     email: Optional[str] = None
 
-@app.get("/auth/social/vk")
+@app.post("/auth/social/vk")
 async def vk_callback(
     code: str,
     state: Optional[str] = None,
