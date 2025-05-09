@@ -2712,41 +2712,9 @@ async def vk_callback(
                 
                 # Получаем данные пользователя после авторизации
                 auth_result = login_response.json()
-                user_id = auth_result.get("user_id")
+               
                 
-                if not user_id:
-                    logger.error("No user_id in login response")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Failed to get user_id after login"
-                    )
-                
-                # Создаем профиль пользователя в user_db
-                try:
-                    profile_data = {
-                        "user_id": user_id,
-                        "username": auth_data["username"],
-                        "full_name": auth_data["full_name"],
-                        "about_me": None,
-                        "avatar": user_data.get("photo_200")  # Добавляем аватар из VK
-                    }
-                    
-                    logger.info(f"Creating user profile with data: {profile_data}")
-                    
-                    profile_response = await client.post(
-                        f"{USER_SERVICE_URL}/user/profile",
-                        json=profile_data
-                    )
-                    
-                    logger.info(f"Profile creation response status: {profile_response.status_code}")
-                    logger.info(f"Profile creation response text: {profile_response.text}")
-                    
-                    if profile_response.status_code != 200:
-                        logger.error(f"Failed to create user profile: {profile_response.text}")
-                    else:
-                        logger.info("User profile successfully created")
-                except Exception as e:
-                    logger.error(f"Error creating user profile: {str(e)}")
+               
                 
                 return auth_result
                 
