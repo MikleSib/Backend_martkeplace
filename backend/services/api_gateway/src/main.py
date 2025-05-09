@@ -2422,6 +2422,7 @@ class VKUserData(BaseModel):
 @app.post("/auth/social/vk")
 async def vk_callback(
     code: str = Query(..., description="Код авторизации от VK"),
+    device_id: str = Query(..., description="Идентификатор устройства"),
     provider: str = Query("vk", description="Провайдер авторизации"),
     state: Optional[str] = Query(None, description="Состояние для проверки CSRF"),
     expires_in: Optional[int] = Query(None, description="Время жизни токена в секундах")
@@ -2430,6 +2431,7 @@ async def vk_callback(
     Обработка callback от VK OAuth
     
     - **code**: Код авторизации от VK
+    - **device_id**: Идентификатор устройства
     - **provider**: Провайдер авторизации (по умолчанию "vk")
     - **state**: Состояние для проверки CSRF (опционально)
     - **expires_in**: Время жизни токена в секундах (опционально)
@@ -2450,7 +2452,8 @@ async def vk_callback(
                 "client_secret": "jkkVgCawuyvAoJl5JVFk",
                 "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
                 "code": code,
-                "grant_type": "authorization_code"
+                "grant_type": "authorization_code",
+                "device_id": device_id
             }
             
             logger.info(f"Requesting VK token with params: {token_params}")
