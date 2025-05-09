@@ -2445,8 +2445,8 @@ async def vk_callback(
             token_url = "https://oauth.vk.com/access_token"
             token_params = {
                 "client_id": "53543107",
-                "client_secret": "db19fe5fdb19fe5fdb19fe5f33d828fe9cddb19db19fe5fb307c8c5e7305d41cb4fb477",
-                "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
+                "client_secret": "jkkVgCawuyvAoJl5JVFk",
+                "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
                 "code": code
             }
             
