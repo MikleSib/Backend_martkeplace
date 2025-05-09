@@ -2443,21 +2443,23 @@ async def vk_callback(
     try:
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
-            token_url = "https://id.vk.com/oauth2/auth"
+            token_url = "https://oauth.vk.com/access_token"
             
             token_params = {
                 "client_id": "53543107",
                 "client_secret": "jkkVgCawuyvAoJl5JVFk",
                 "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
                 "code": code,
-                "grant_type": "authorization_code"
+                "grant_type": "authorization_code",
+                "device_id": "web"  # Добавляем device_id для веб-приложения
             }
             
             logger.info(f"Requesting VK token with params: {token_params}")
             
             token_response = await client.post(token_url, params=token_params)
             logger.info(f"VK token response status: {token_response.status_code}")
-            logger.info(f"VK token response: {token_response.text}")
+            logger.info(f"VK token response headers: {token_response.headers}")
+            logger.info(f"VK token response text: {token_response.text}")
             
             if token_response.status_code != 200:
                 error_detail = "Failed to get VK access token"
@@ -2480,13 +2482,30 @@ async def vk_callback(
                 )
             
             try:
+                # Проверяем, что ответ является JSON
+                if not token_response.headers.get("content-type", "").startswith("application/json"):
+                    logger.error(f"Unexpected content type: {token_response.headers.get('content-type')}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid response format from VK"
+                    )
+                
                 token_data = token_response.json()
                 logger.info(f"Received token data: {token_data}")
+                
+                # Проверяем структуру ответа
+                if not isinstance(token_data, dict):
+                    logger.error(f"Token data is not a dictionary: {type(token_data)}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid response structure from VK"
+                    )
+                
             except Exception as e:
                 logger.error(f"Failed to parse VK token response: {str(e)}")
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid VK token response format"
+                    detail=f"Invalid VK token response format: {str(e)}"
                 )
             
             # Проверяем наличие необходимых полей в ответе
@@ -2499,6 +2518,7 @@ async def vk_callback(
             scope = token_data.get("scope")
             
             logger.info(f"Parsed token data: access_token={bool(access_token)}, user_id={user_id}, token_type={token_type}")
+            logger.info(f"Full token data keys: {list(token_data.keys())}")
             
             if not access_token:
                 logger.error(f"Missing access_token in VK response: {token_data}")
