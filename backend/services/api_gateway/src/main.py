@@ -2443,7 +2443,7 @@ async def vk_callback(
     try:
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
-            token_url = "https://oauth.vk.com/access_token"
+            token_url = "https://id.vk.com/oauth2/auth"
             
             token_params = {
                 "client_id": "53543107",
