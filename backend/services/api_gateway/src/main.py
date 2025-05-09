@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import uuid
+import jwt
 
 app = FastAPI(
     title="API Gateway",
@@ -2487,14 +2488,33 @@ async def vk_callback(
                     detail="Invalid VK token response format"
                 )
             
+            # Проверяем наличие необходимых полей в ответе
             access_token = token_data.get("access_token")
             user_id = token_data.get("user_id")
+            id_token = token_data.get("id_token")
             
-            if not access_token or not user_id:
-                logger.error(f"Missing required fields in VK response: {token_data}")
+            if not access_token:
+                logger.error(f"Missing access_token in VK response: {token_data}")
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid VK response: missing access_token or user_id"
+                    detail="Invalid VK response: missing access_token"
+                )
+            
+            # Если нет user_id в основном ответе, пробуем получить его из id_token
+            if not user_id and id_token:
+                try:
+                    # Декодируем JWT токен
+                    decoded_token = jwt.decode(id_token, options={"verify_signature": False})
+                    user_id = decoded_token.get("sub")
+                    logger.info(f"Extracted user_id from id_token: {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to decode id_token: {str(e)}")
+            
+            if not user_id:
+                logger.error(f"Missing user_id in VK response: {token_data}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid VK response: missing user_id"
                 )
             
             # Получаем данные пользователя от VK
