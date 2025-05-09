@@ -1,6 +1,6 @@
 import uvicorn
 import uvicorn
-from fastapi import FastAPI, Request, Depends, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, Request, Depends, HTTPException, File, UploadFile, Form , Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import requests
@@ -2420,25 +2420,33 @@ class VKUserData(BaseModel):
 
 @app.post("/auth/social/vk")
 async def vk_callback(
-    code: str,
-    state: Optional[str] = None,
-    expires_in: Optional[int] = None
+    code: str = Query(..., description="Код авторизации от VK"),
+    provider: str = Query("vk", description="Провайдер авторизации"),
+    state: Optional[str] = Query(None, description="Состояние для проверки CSRF"),
+    expires_in: Optional[int] = Query(None, description="Время жизни токена в секундах")
 ):
     """
     Обработка callback от VK OAuth
     
     - **code**: Код авторизации от VK
+    - **provider**: Провайдер авторизации (по умолчанию "vk")
     - **state**: Состояние для проверки CSRF (опционально)
     - **expires_in**: Время жизни токена в секундах (опционально)
     """
+    if provider != "vk":
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported provider"
+        )
+        
     try:
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
                 "https://oauth.vk.com/access_token",
                 params={
-                    "client_id": "53543107",  # Замените на ваш client_id
-                    "client_secret": "jkkVgCawuyvAoJl5JVFk",  # Замените на ваш client_secret
+                    "client_id": "53543107",
+                    "client_secret": "jkkVgCawuyvAoJl5JVFk",
                     "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
                     "code": code
                 }
@@ -2489,8 +2497,8 @@ async def vk_callback(
             # Формируем данные для регистрации/авторизации
             auth_data = {
                 "username": f"vk_{user_id}",
-                "email": f"vk_{user_id}@vk.com",  # Временный email, если нет реального
-                "password": str(uuid.uuid4()),  # Генерируем случайный пароль
+                "email": f"vk_{user_id}@vk.com",
+                "password": str(uuid.uuid4()),
                 "full_name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}",
                 "is_email_verified": True,
                 "is_admin": False
