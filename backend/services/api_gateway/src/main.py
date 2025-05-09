@@ -2663,19 +2663,33 @@ async def vk_callback(
                 logger.info("User successfully registered")
                 
                 # После успешной регистрации авторизуем пользователя
+                logger.info("Attempting to login after registration")
+                login_data = {
+                    "email": auth_data["email"],
+                    "password": auth_data["password"]
+                }
+                logger.info(f"Login data: {login_data}")
+                
                 login_response = await client.post(
                     f"{AUTH_SERVICE_URL}/auth/login",
-                    json={
-                        "email": auth_data["email"],
-                        "password": auth_data["password"]
-                    }
+                    json=login_data
                 )
                 
+                logger.info(f"Login response status: {login_response.status_code}")
+                logger.info(f"Login response text: {login_response.text}")
+                
                 if login_response.status_code != 200:
-                    logger.error("Failed to login after registration")
+                    error_detail = "Failed to login after registration"
+                    try:
+                        error_data = login_response.json()
+                        if "detail" in error_data:
+                            error_detail = error_data["detail"]
+                    except:
+                        pass
+                    logger.error(f"Login failed: {error_detail}")
                     raise HTTPException(
                         status_code=400,
-                        detail="Failed to login after registration"
+                        detail=error_detail
                     )
                 
                 logger.info("User successfully logged in after registration")
@@ -2684,19 +2698,32 @@ async def vk_callback(
                 auth_result = login_response.json()
                 user_id = auth_result.get("user_id")
                 
+                if not user_id:
+                    logger.error("No user_id in login response")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Failed to get user_id after login"
+                    )
+                
                 # Создаем профиль пользователя в user_db
                 try:
                     profile_data = {
                         "user_id": user_id,
                         "username": auth_data["username"],
                         "full_name": auth_data["full_name"],
-                        "about_me": None
+                        "about_me": None,
+                        "avatar": user_data.get("photo_200")  # Добавляем аватар из VK
                     }
+                    
+                    logger.info(f"Creating user profile with data: {profile_data}")
                     
                     profile_response = await client.post(
                         f"{USER_SERVICE_URL}/user/profile",
                         json=profile_data
                     )
+                    
+                    logger.info(f"Profile creation response status: {profile_response.status_code}")
+                    logger.info(f"Profile creation response text: {profile_response.text}")
                     
                     if profile_response.status_code != 200:
                         logger.error(f"Failed to create user profile: {profile_response.text}")
