@@ -2434,6 +2434,7 @@ def generate_code_verifier(length: int = 43) -> str:
 async def vk_callback(
     code: str = Query(..., description="Код авторизации от VK"),
     device_id: str = Query(..., description="Идентификатор устройства"),
+    code_verifier: str = Query(..., description="Code verifier для PKCE"),
     provider: str = Query("vk", description="Провайдер авторизации"),
     state: Optional[str] = Query(None, description="Состояние для проверки CSRF"),
     expires_in: Optional[int] = Query(None, description="Время жизни токена в секундах")
@@ -2443,6 +2444,7 @@ async def vk_callback(
     
     - **code**: Код авторизации от VK
     - **device_id**: Идентификатор устройства
+    - **code_verifier**: Code verifier для PKCE (должен совпадать с тем, что использовался при получении кода)
     - **provider**: Провайдер авторизации (по умолчанию "vk")
     - **state**: Состояние для проверки CSRF (опционально)
     - **expires_in**: Время жизни токена в секундах (опционально)
@@ -2454,10 +2456,6 @@ async def vk_callback(
         )
         
     try:
-        # Генерируем code_verifier
-        code_verifier = generate_code_verifier()
-        logger.info(f"Generated code_verifier: {code_verifier}")
-        
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
             token_url = "https://id.vk.com/oauth2/auth"
