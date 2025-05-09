@@ -2451,15 +2451,23 @@ async def vk_callback(
                 "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
                 "code": code,
                 "grant_type": "authorization_code",
-                "device_id": "web"  # Добавляем device_id для веб-приложения
+                "device_id": "web",
+                "code_verifier": code.split('.')[-1]  # Извлекаем code_verifier из кода
             }
             
             logger.info(f"Requesting VK token with params: {token_params}")
             
-            token_response = await client.post(token_url, params=token_params)
-            logger.info(f"VK token response status: {token_response.status_code}")
-            logger.info(f"VK token response headers: {token_response.headers}")
-            logger.info(f"VK token response text: {token_response.text}")
+            # Пробуем сначала POST запрос
+            try:
+                token_response = await client.post(token_url, params=token_params)
+                logger.info(f"VK token POST response status: {token_response.status_code}")
+                logger.info(f"VK token POST response text: {token_response.text}")
+            except Exception as e:
+                logger.error(f"POST request failed: {str(e)}")
+                # Если POST не сработал, пробуем GET
+                token_response = await client.get(token_url, params=token_params)
+                logger.info(f"VK token GET response status: {token_response.status_code}")
+                logger.info(f"VK token GET response text: {token_response.text}")
             
             if token_response.status_code != 200:
                 error_detail = "Failed to get VK access token"
