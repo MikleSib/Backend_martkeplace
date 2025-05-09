@@ -2492,9 +2492,8 @@ async def vk_callback(
                 "email": f"vk_{user_id}@vk.com",  # Временный email, если нет реального
                 "password": str(uuid.uuid4()),  # Генерируем случайный пароль
                 "full_name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}",
-                "avatar": user_data.get("photo_200"),
-                "is_verified": True,  # Пользователь верифицирован через VK
-                "vk_id": user_id
+                "is_email_verified": True,
+                "is_admin": False
             }
             
             # Если есть email от VK, используем его
@@ -2545,7 +2544,30 @@ async def vk_callback(
                         detail="Failed to login after registration"
                     )
                 
-                return login_response.json()
+                # Получаем данные пользователя после авторизации
+                auth_result = login_response.json()
+                user_id = auth_result.get("user_id")
+                
+                # Создаем профиль пользователя в user_db
+                try:
+                    profile_data = {
+                        "user_id": user_id,
+                        "username": auth_data["username"],
+                        "full_name": auth_data["full_name"],
+                        "about_me": None,
+                    }
+                    
+                    profile_response = await client.post(
+                        f"{USER_SERVICE_URL}/user/profile",
+                        json=profile_data
+                    )
+                    
+                    if profile_response.status_code != 200:
+                        logger.error(f"Failed to create user profile: {profile_response.text}")
+                except Exception as e:
+                    logger.error(f"Error creating user profile: {str(e)}")
+                
+                return auth_result
                 
     except Exception as e:
         logger.error(f"VK OAuth error: {str(e)}")
