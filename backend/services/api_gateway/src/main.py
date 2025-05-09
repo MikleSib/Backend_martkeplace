@@ -2442,54 +2442,94 @@ async def vk_callback(
     try:
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
-            token_response = await client.post(
-                "https://oauth.vk.com/access_token",
-                params={
-                    "client_id": "53543107",
-                    "client_secret": "jkkVgCawuyvAoJl5JVFk",
-                    "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
-                    "code": code
-                }
-            )
+            token_url = "https://oauth.vk.com/access_token"
+            token_params = {
+                "client_id": "53543107",
+                "client_secret": "jkkVgCawuyvAoJl5JVFk",
+                "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
+                "code": code
+            }
+            
+            logger.info(f"Requesting VK token with params: {token_params}")
+            
+            token_response = await client.post(token_url, params=token_params)
+            logger.info(f"VK token response status: {token_response.status_code}")
+            logger.info(f"VK token response: {token_response.text}")
             
             if token_response.status_code != 200:
+                error_detail = "Failed to get VK access token"
+                try:
+                    error_data = token_response.json()
+                    if "error" in error_data:
+                        error_detail = f"VK error: {error_data['error']} - {error_data.get('error_description', '')}"
+                except:
+                    pass
                 raise HTTPException(
                     status_code=400,
-                    detail="Failed to get VK access token"
+                    detail=error_detail
                 )
             
-            token_data = token_response.json()
+            try:
+                token_data = token_response.json()
+            except Exception as e:
+                logger.error(f"Failed to parse VK token response: {str(e)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid VK token response format"
+                )
+            
             access_token = token_data.get("access_token")
             user_id = token_data.get("user_id")
             
             if not access_token or not user_id:
+                logger.error(f"Missing required fields in VK response: {token_data}")
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid VK response"
+                    detail="Invalid VK response: missing access_token or user_id"
                 )
             
             # Получаем данные пользователя от VK
-            user_response = await client.get(
-                "https://api.vk.com/method/users.get",
-                params={
-                    "user_ids": user_id,
-                    "fields": "photo_200,email",
-                    "access_token": access_token,
-                    "v": "5.131"
-                }
-            )
+            user_url = "https://api.vk.com/method/users.get"
+            user_params = {
+                "user_ids": user_id,
+                "fields": "photo_200,email",
+                "access_token": access_token,
+                "v": "5.131"
+            }
+            
+            logger.info(f"Requesting VK user data with params: {user_params}")
+            
+            user_response = await client.get(user_url, params=user_params)
+            logger.info(f"VK user response status: {user_response.status_code}")
+            logger.info(f"VK user response: {user_response.text}")
             
             if user_response.status_code != 200:
+                error_detail = "Failed to get VK user data"
+                try:
+                    error_data = user_response.json()
+                    if "error" in error_data:
+                        error_detail = f"VK error: {error_data['error']} - {error_data.get('error_description', '')}"
+                except:
+                    pass
                 raise HTTPException(
                     status_code=400,
-                    detail="Failed to get VK user data"
+                    detail=error_detail
                 )
             
-            vk_data = user_response.json()
-            if "response" not in vk_data or not vk_data["response"]:
+            try:
+                vk_data = user_response.json()
+            except Exception as e:
+                logger.error(f"Failed to parse VK user response: {str(e)}")
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid VK user data"
+                    detail="Invalid VK user data response format"
+                )
+            
+            if "response" not in vk_data or not vk_data["response"]:
+                logger.error(f"Invalid VK user data structure: {vk_data}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid VK user data structure"
                 )
             
             user_data = vk_data["response"][0]
@@ -2508,6 +2548,8 @@ async def vk_callback(
             if "email" in token_data:
                 auth_data["email"] = token_data["email"]
             
+            logger.info(f"Attempting to authenticate/register user with data: {auth_data}")
+            
             # Регистрируем или авторизуем пользователя
             async with httpx.AsyncClient() as client:
                 # Пробуем сначала авторизоваться
@@ -2521,21 +2563,33 @@ async def vk_callback(
                     )
                     
                     if login_response.status_code == 200:
+                        logger.info("User successfully logged in")
                         return login_response.json()
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Login attempt failed: {str(e)}")
                 
                 # Если авторизация не удалась, регистрируем пользователя
+                logger.info("Attempting to register new user")
                 register_response = await client.post(
                     f"{AUTH_SERVICE_URL}/auth/register",
                     json=auth_data
                 )
                 
                 if register_response.status_code != 200:
+                    error_detail = "Failed to register user"
+                    try:
+                        error_data = register_response.json()
+                        if "detail" in error_data:
+                            error_detail = error_data["detail"]
+                    except:
+                        pass
+                    logger.error(f"Registration failed: {error_detail}")
                     raise HTTPException(
                         status_code=400,
-                        detail="Failed to register user"
+                        detail=error_detail
                     )
+                
+                logger.info("User successfully registered")
                 
                 # После успешной регистрации авторизуем пользователя
                 login_response = await client.post(
@@ -2547,10 +2601,13 @@ async def vk_callback(
                 )
                 
                 if login_response.status_code != 200:
+                    logger.error("Failed to login after registration")
                     raise HTTPException(
                         status_code=400,
                         detail="Failed to login after registration"
                     )
+                
+                logger.info("User successfully logged in after registration")
                 
                 # Получаем данные пользователя после авторизации
                 auth_result = login_response.json()
@@ -2562,7 +2619,7 @@ async def vk_callback(
                         "user_id": user_id,
                         "username": auth_data["username"],
                         "full_name": auth_data["full_name"],
-                        "about_me": None,
+                        "about_me": None
                     }
                     
                     profile_response = await client.post(
@@ -2572,6 +2629,8 @@ async def vk_callback(
                     
                     if profile_response.status_code != 200:
                         logger.error(f"Failed to create user profile: {profile_response.text}")
+                    else:
+                        logger.info("User profile successfully created")
                 except Exception as e:
                     logger.error(f"Error creating user profile: {str(e)}")
                 
