@@ -2635,88 +2635,126 @@ async def vk_callback(
                 
                 # Если пользователь не найден, регистрируем нового
                 logger.info("User not found, attempting to register")
-                register_response = await client.post(
-                    f"{AUTH_SERVICE_URL}/auth/register",
-                    json=auth_data
-                )
-                
-                if register_response.status_code != 200:
-                    error_detail = "Failed to register user"
-                    try:
-                        error_data = register_response.json()
-                        if "detail" in error_data:
-                            error_detail = error_data["detail"]
-                    except:
-                        pass
-                    logger.error(f"Registration failed: {error_detail}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=error_detail
+                try:
+                    register_response = await client.post(
+                        f"{AUTH_SERVICE_URL}/auth/register",
+                        json=auth_data
                     )
-                
-                logger.info("User successfully registered")
-                
-                # После успешной регистрации подтверждаем email
-                logger.info("Verifying email after VK registration")
-                verify_response = await client.post(
-                    f"{AUTH_SERVICE_URL}/auth/verify-email",
-                    params={
+                    
+                    if register_response.status_code == 400 and "почтой уже существует" in register_response.text:
+                        # Если пользователь существует, пробуем авторизоваться
+                        logger.info("User exists but registration failed, attempting to login")
+                        login_data = {
+                            "email": auth_data["email"],
+                            "password": auth_data["password"]
+                        }
+                        login_response = await client.post(
+                            f"{AUTH_SERVICE_URL}/auth/login",
+                            json=login_data
+                        )
+                        
+                        if login_response.status_code == 200:
+                            logger.info("User successfully logged in")
+                            return login_response.json()
+                        else:
+                            # Если не удалось войти, возвращаем ошибку регистрации
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Не удалось авторизовать существующего пользователя"
+                            )
+                    
+                    if register_response.status_code != 200:
+                        error_detail = "Failed to register user"
+                        try:
+                            error_data = register_response.json()
+                            if "detail" in error_data:
+                                error_detail = error_data["detail"]
+                        except:
+                            pass
+                        logger.error(f"Registration failed: {error_detail}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=error_detail
+                        )
+                    
+                    logger.info("User successfully registered")
+                    
+                    # После успешной регистрации подтверждаем email
+                    logger.info("Verifying email after VK registration")
+                    verify_response = await client.post(
+                        f"{AUTH_SERVICE_URL}/auth/verify-email",
+                        params={
+                            "email": auth_data["email"],
+                            "code": "vk_verified"  # Специальный код для VK верификации
+                        }
+                    )
+                    
+                    logger.info(f"Email verification response status: {verify_response.status_code}")
+                    logger.info(f"Email verification response text: {verify_response.text}")
+                    
+                    if verify_response.status_code != 200:
+                        logger.error(f"Failed to verify email: {verify_response.text}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Failed to verify email after VK registration"
+                        )
+                    
+                    logger.info("Email successfully verified")
+                    
+                    # После подтверждения email авторизуем пользователя
+                    logger.info("Attempting to login after email verification")
+                    login_data = {
                         "email": auth_data["email"],
-                        "code": "vk_verified"  # Специальный код для VK верификации
+                        "password": auth_data["password"]
                     }
-                )
-                
-                logger.info(f"Email verification response status: {verify_response.status_code}")
-                logger.info(f"Email verification response text: {verify_response.text}")
-                
-                if verify_response.status_code != 200:
-                    logger.error(f"Failed to verify email: {verify_response.text}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Failed to verify email after VK registration"
+                    logger.info(f"Login data: {login_data}")
+                    
+                    login_response = await client.post(
+                        f"{AUTH_SERVICE_URL}/auth/login",
+                        json=login_data
                     )
-                
-                logger.info("Email successfully verified")
-                
-                # После подтверждения email авторизуем пользователя
-                logger.info("Attempting to login after email verification")
-                login_data = {
-                    "email": auth_data["email"],
-                    "password": auth_data["password"]
-                }
-                logger.info(f"Login data: {login_data}")
-                
-                login_response = await client.post(
-                    f"{AUTH_SERVICE_URL}/auth/login",
-                    json=login_data
-                )
-                
-                logger.info(f"Login response status: {login_response.status_code}")
-                logger.info(f"Login response text: {login_response.text}")
-                
-                if login_response.status_code != 200:
-                    error_detail = "Failed to login after registration"
-                    try:
-                        error_data = login_response.json()
-                        if "detail" in error_data:
-                            error_detail = error_data["detail"]
-                    except:
-                        pass
-                    logger.error(f"Login failed: {error_detail}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=error_detail
-                    )
-                
-                logger.info("User successfully logged in after registration")
-                
-                # Получаем данные пользователя после авторизации
-                auth_result = login_response.json()
-               
-                
-               
-                
-                return auth_result
+                    
+                    logger.info(f"Login response status: {login_response.status_code}")
+                    logger.info(f"Login response text: {login_response.text}")
+                    
+                    if login_response.status_code != 200:
+                        error_detail = "Failed to login after registration"
+                        try:
+                            error_data = login_response.json()
+                            if "detail" in error_data:
+                                error_detail = error_data["detail"]
+                        except:
+                            pass
+                        logger.error(f"Login failed: {error_detail}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=error_detail
+                        )
+                    
+                    logger.info("User successfully logged in after registration")
+                    
+                    # Получаем данные пользователя после авторизации
+                    auth_result = login_response.json()
+                    return auth_result
+                    
+                except HTTPException as e:
+                    if "почтой уже существует" in str(e.detail):
+                        # Если пользователь существует, пробуем авторизоваться
+                        logger.info("User exists but registration failed, attempting to login")
+                        login_data = {
+                            "email": auth_data["email"],
+                            "password": auth_data["password"]
+                        }
+                        login_response = await client.post(
+                            f"{AUTH_SERVICE_URL}/auth/login",
+                            json=login_data
+                        )
+                        
+                        if login_response.status_code == 200:
+                            logger.info("User successfully logged in")
+                            return login_response.json()
+                    
+                    raise e
                 
     except Exception as e:
         logger.error(f"VK OAuth error: {str(e)}")
