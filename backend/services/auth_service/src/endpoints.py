@@ -200,9 +200,18 @@ async def verify_email(email: str, code: str, db: AsyncSession = Depends(get_db)
         if not user:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
         
-        # Проверка кода будет выполняться на уровне API Gateway через Redis
-        # Здесь просто обновляем статус верификации
+        # Если код "vk_verified", автоматически подтверждаем email
+        if code == "vk_verified":
+            user.is_email_verified = True
+            await db.commit()
+            return {
+                "message": "Email успешно подтвержден через VK",
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email
+            }
         
+        # Для обычной верификации проверка кода будет выполняться на уровне API Gateway через Redis
         user.is_email_verified = True
         await db.commit()
         

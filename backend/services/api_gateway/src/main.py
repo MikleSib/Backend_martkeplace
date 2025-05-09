@@ -2662,8 +2662,30 @@ async def vk_callback(
                 
                 logger.info("User successfully registered")
                 
-                # После успешной регистрации авторизуем пользователя
-                logger.info("Attempting to login after registration")
+                # После успешной регистрации подтверждаем email
+                logger.info("Verifying email after VK registration")
+                verify_response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/verify-email",
+                    params={
+                        "email": auth_data["email"],
+                        "code": "vk_verified"  # Специальный код для VK верификации
+                    }
+                )
+                
+                logger.info(f"Email verification response status: {verify_response.status_code}")
+                logger.info(f"Email verification response text: {verify_response.text}")
+                
+                if verify_response.status_code != 200:
+                    logger.error(f"Failed to verify email: {verify_response.text}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Failed to verify email after VK registration"
+                    )
+                
+                logger.info("Email successfully verified")
+                
+                # После подтверждения email авторизуем пользователя
+                logger.info("Attempting to login after email verification")
                 login_data = {
                     "email": auth_data["email"],
                     "password": auth_data["password"]
