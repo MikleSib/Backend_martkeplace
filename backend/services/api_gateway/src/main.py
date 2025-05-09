@@ -2481,6 +2481,7 @@ async def vk_callback(
             
             try:
                 token_data = token_response.json()
+                logger.info(f"Received token data: {token_data}")
             except Exception as e:
                 logger.error(f"Failed to parse VK token response: {str(e)}")
                 raise HTTPException(
@@ -2490,8 +2491,14 @@ async def vk_callback(
             
             # Проверяем наличие необходимых полей в ответе
             access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
+            token_type = token_data.get("token_type")
+            expires_in = token_data.get("expires_in")
             user_id = token_data.get("user_id")
             id_token = token_data.get("id_token")
+            scope = token_data.get("scope")
+            
+            logger.info(f"Parsed token data: access_token={bool(access_token)}, user_id={user_id}, token_type={token_type}")
             
             if not access_token:
                 logger.error(f"Missing access_token in VK response: {token_data}")
@@ -2499,16 +2506,6 @@ async def vk_callback(
                     status_code=400,
                     detail="Invalid VK response: missing access_token"
                 )
-            
-            # Если нет user_id в основном ответе, пробуем получить его из id_token
-            if not user_id and id_token:
-                try:
-                    # Декодируем JWT токен
-                    decoded_token = jwt.decode(id_token, options={"verify_signature": False})
-                    user_id = decoded_token.get("sub")
-                    logger.info(f"Extracted user_id from id_token: {user_id}")
-                except Exception as e:
-                    logger.error(f"Failed to decode id_token: {str(e)}")
             
             if not user_id:
                 logger.error(f"Missing user_id in VK response: {token_data}")
