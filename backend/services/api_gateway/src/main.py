@@ -18,6 +18,7 @@ import httpx
 from fastapi.responses import JSONResponse
 from starlette.responses import Response, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+import uuid
 
 app = FastAPI(
     title="API Gateway",
@@ -2409,3 +2410,146 @@ async def create_marketplace_product(
     except Exception as e:
         logger.error(f"Error creating marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating marketplace product: {str(e)}")
+
+class VKUserData(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    photo_200: Optional[str] = None
+    email: Optional[str] = None
+
+@app.get("/auth/vk/callback")
+async def vk_callback(
+    code: str,
+    state: Optional[str] = None,
+    expires_in: Optional[int] = None
+):
+    """
+    Обработка callback от VK OAuth
+    
+    - **code**: Код авторизации от VK
+    - **state**: Состояние для проверки CSRF (опционально)
+    - **expires_in**: Время жизни токена в секундах (опционально)
+    """
+    try:
+        # Получаем access token от VK
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth.vk.com/access_token",
+                params={
+                    "client_id": "53543107",  # Замените на ваш client_id
+                    "client_secret": "jkkVgCawuyvAoJl5JVFk",  # Замените на ваш client_secret
+                    "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai",
+                    "code": code
+                }
+            )
+            
+            if token_response.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to get VK access token"
+                )
+            
+            token_data = token_response.json()
+            access_token = token_data.get("access_token")
+            user_id = token_data.get("user_id")
+            
+            if not access_token or not user_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid VK response"
+                )
+            
+            # Получаем данные пользователя от VK
+            user_response = await client.get(
+                "https://api.vk.com/method/users.get",
+                params={
+                    "user_ids": user_id,
+                    "fields": "photo_200,email",
+                    "access_token": access_token,
+                    "v": "5.131"
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to get VK user data"
+                )
+            
+            vk_data = user_response.json()
+            if "response" not in vk_data or not vk_data["response"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid VK user data"
+                )
+            
+            user_data = vk_data["response"][0]
+            
+            # Формируем данные для регистрации/авторизации
+            auth_data = {
+                "username": f"vk_{user_id}",
+                "email": f"vk_{user_id}@vk.com",  # Временный email, если нет реального
+                "password": str(uuid.uuid4()),  # Генерируем случайный пароль
+                "full_name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}",
+                "avatar": user_data.get("photo_200"),
+                "is_verified": True,  # Пользователь верифицирован через VK
+                "vk_id": user_id
+            }
+            
+            # Если есть email от VK, используем его
+            if "email" in token_data:
+                auth_data["email"] = token_data["email"]
+            
+            # Регистрируем или авторизуем пользователя
+            async with httpx.AsyncClient() as client:
+                # Пробуем сначала авторизоваться
+                try:
+                    login_response = await client.post(
+                        f"{AUTH_SERVICE_URL}/auth/login",
+                        json={
+                            "email": auth_data["email"],
+                            "password": auth_data["password"]
+                        }
+                    )
+                    
+                    if login_response.status_code == 200:
+                        return login_response.json()
+                except:
+                    pass
+                
+                # Если авторизация не удалась, регистрируем пользователя
+                register_response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/register",
+                    json=auth_data
+                )
+                
+                if register_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Failed to register user"
+                    )
+                
+                # После успешной регистрации авторизуем пользователя
+                login_response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/login",
+                    json={
+                        "email": auth_data["email"],
+                        "password": auth_data["password"]
+                    }
+                )
+                
+                if login_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Failed to login after registration"
+                    )
+                
+                return login_response.json()
+                
+    except Exception as e:
+        logger.error(f"VK OAuth error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"VK OAuth error: {str(e)}"
+        )
