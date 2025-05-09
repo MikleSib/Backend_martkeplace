@@ -2442,12 +2442,14 @@ async def vk_callback(
     try:
         # Получаем access token от VK
         async with httpx.AsyncClient() as client:
-            token_url = "https://oauth.vk.com/access_token"
+            token_url = "https://id.vk.com/oauth2/auth"
+            
             token_params = {
                 "client_id": "53543107",
                 "client_secret": "jkkVgCawuyvAoJl5JVFk",
                 "redirect_uri": "https://xn----9sbyncijf1ah6ec.xn--p1ai/",
-                "code": code
+                "code": code,
+                "grant_type": "authorization_code"
             }
             
             logger.info(f"Requesting VK token with params: {token_params}")
@@ -2463,6 +2465,10 @@ async def vk_callback(
                     if "error" in error_data:
                         if error_data["error"] == "invalid_grant":
                             error_detail = "Код авторизации истек или недействителен. Пожалуйста, попробуйте авторизоваться снова."
+                        elif error_data["error"] == "invalid_client":
+                            error_detail = "Ошибка в настройках приложения VK. Проверьте client_id и client_secret."
+                        elif error_data["error"] == "invalid_request":
+                            error_detail = "Неверный формат запроса. Проверьте параметры запроса."
                         else:
                             error_detail = f"VK error: {error_data['error']} - {error_data.get('error_description', '')}"
                 except:
