@@ -226,3 +226,48 @@ async def verify_email(email: str, code: str, db: AsyncSession = Depends(get_db)
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Ошибка верификации email: {str(e)}")
+
+@router.post("/auth/check-email")
+async def check_email(email: str, db: AsyncSession = Depends(get_db)):
+    """
+    Проверяет существование пользователя по email и возвращает токены, если пользователь существует
+    """
+    try:
+        # Приводим email к нижнему регистру
+        email = email.lower()
+        
+        # Находим пользователя по email
+        user = await get_user_by_email(db, email)
+        if not user:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Пользователь не найден"}
+            )
+        
+        # Если пользователь найден, создаем токены
+        access_token = create_access_token({
+            "sub": user.username,
+            "email": user.email,
+            "id": user.id,
+            "is_admin": user.is_admin
+        })
+        
+        refresh_token = create_refresh_token({
+            "sub": user.username,
+            "email": user.email,
+            "id": user.id,
+            "is_admin": user.is_admin
+        })
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_admin": user.is_admin
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при проверке email: {str(e)}")

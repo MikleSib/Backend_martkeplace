@@ -2623,24 +2623,18 @@ async def vk_callback(
             
             # Регистрируем или авторизуем пользователя
             async with httpx.AsyncClient() as client:
-                # Пробуем сначала авторизоваться
-                try:
-                    login_response = await client.post(
-                        f"{AUTH_SERVICE_URL}/auth/login",
-                        json={
-                            "email": auth_data["email"],
-                            "password": auth_data["password"]
-                        }
-                    )
-                    
-                    if login_response.status_code == 200:
-                        logger.info("User successfully logged in")
-                        return login_response.json()
-                except Exception as e:
-                    logger.error(f"Login attempt failed: {str(e)}")
+                # Проверяем существование пользователя
+                check_response = await client.post(
+                    f"{AUTH_SERVICE_URL}/auth/check-email",
+                    json={"email": auth_data["email"]}
+                )
                 
-                # Если авторизация не удалась, регистрируем пользователя
-                logger.info("Attempting to register new user")
+                if check_response.status_code == 200:
+                    logger.info("User exists, returning tokens")
+                    return check_response.json()
+                
+                # Если пользователь не найден, регистрируем нового
+                logger.info("User not found, attempting to register")
                 register_response = await client.post(
                     f"{AUTH_SERVICE_URL}/auth/register",
                     json=auth_data
