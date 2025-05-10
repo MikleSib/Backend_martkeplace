@@ -21,7 +21,8 @@ dependencies = [
     "python-multipart>=0.0.6",
     "pyjwt>=2.8.0",
     "pillow>=10.2.0",
-    "aioredis>=2.0.0"
+    "aioredis>=2.0.0",
+    "colorama",
 ]
 
 [project.optional-dependencies]
