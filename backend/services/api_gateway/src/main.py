@@ -2563,7 +2563,7 @@ async def vk_callback(
             user_url = "https://api.vk.com/method/users.get"
             user_params = {
                 "user_ids": user_id,
-                "fields": "photo_200,email",
+                "fields": "photo_200,email,username",
                 "access_token": access_token,
                 "v": "5.131"
             }
@@ -2604,7 +2604,7 @@ async def vk_callback(
                 )
             
             user_data = vk_data["response"][0]
-            
+            logger.info(f"VK user data: {user_data}")
             # Формируем данные для регистрации/авторизации
             auth_data = {
                 "username": f"vk_{user_id}",
