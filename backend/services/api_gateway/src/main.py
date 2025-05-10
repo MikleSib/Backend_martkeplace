@@ -2646,17 +2646,6 @@ async def vk_callback(
                             file_data = upload_response.json()
                             avatar_url = file_data["url"]
                             logger.info(f"Successfully uploaded avatar to file service. URL: {avatar_url}")
-                            
-                            # Сразу обновляем аватар в профиле пользователя
-                            logger.info(f"Immediately updating user avatar with URL: {avatar_url}")
-                            avatar_response = await client.post(
-                                f"{USER_SERVICE_URL}/user/avatar/vk",
-                                json={"user_id": user_id, "avatar_url": avatar_url}
-                            )
-                            if avatar_response.status_code == 200:
-                                logger.info("User avatar updated successfully")
-                            else:
-                                logger.error(f"Failed to update user avatar. Status: {avatar_response.status_code}, Response: {avatar_response.text}")
                         else:
                             logger.error(f"Failed to upload avatar to file service. Status: {upload_response.status_code}, Response: {upload_response.text}")
                     else:
@@ -2728,6 +2717,27 @@ async def vk_callback(
                         )
                     
                     logger.info("User successfully registered")
+                    
+                    # Если есть аватар, обновляем профиль пользователя
+                    if avatar_url:
+                        try:
+                            registered_user_id = register_response.json()["id"]
+                            logger.info(f"Updating user avatar with URL: {avatar_url} for user_id: {registered_user_id}")
+                            avatar_response = await client.post(
+                                f"{USER_SERVICE_URL}/user/avatar/vk",
+                                params={
+                                    "user_id": registered_user_id,
+                                    "avatar_url": avatar_url
+                                }
+                            )
+                            if avatar_response.status_code == 200:
+                                logger.info("User avatar updated successfully")
+                            else:
+                                logger.error(f"Failed to update user avatar. Status: {avatar_response.status_code}, Response: {avatar_response.text}")
+                        except Exception as e:
+                            logger.error(f"Failed to update user avatar: {str(e)}")
+                    else:
+                        logger.info("No avatar URL available to update user profile")
                     
                     # После успешной регистрации подтверждаем email
                     logger.info("Verifying email after VK registration")
