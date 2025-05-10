@@ -2622,15 +2622,20 @@ async def vk_callback(
             # Если есть фото от VK, сохраняем его
             avatar_url = None
             if "photo_200" in user_data:
+                logger.info(f"Found VK avatar URL: {user_data['photo_200']}")
                 try:
                     # Скачиваем фото из VK
+                    logger.info("Downloading avatar from VK...")
                     photo_response = await client.get(user_data["photo_200"])
                     if photo_response.status_code == 200:
+                        logger.info("Successfully downloaded avatar from VK")
                         # Создаем временный файл с фото
                         photo_content = photo_response.content
                         photo_filename = f"vk_avatar_{user_id}.jpg"
+                        logger.info(f"Created temporary file: {photo_filename}")
                         
                         # Загружаем фото через file_service
+                        logger.info("Uploading avatar to file service...")
                         files = {"file": (photo_filename, photo_content, "image/jpeg")}
                         upload_response = await client.post(
                             f"{FILE_SERVICE_URL}/upload",
@@ -2640,15 +2645,23 @@ async def vk_callback(
                         if upload_response.status_code == 200:
                             file_data = upload_response.json()
                             avatar_url = file_data["url"]
+                            logger.info(f"Successfully uploaded avatar to file service. URL: {avatar_url}")
+                        else:
+                            logger.error(f"Failed to upload avatar to file service. Status: {upload_response.status_code}, Response: {upload_response.text}")
+                    else:
+                        logger.error(f"Failed to download avatar from VK. Status: {photo_response.status_code}")
                 except Exception as e:
                     logger.error(f"Failed to save VK avatar: {str(e)}")
                     # Не прерываем регистрацию, если не удалось сохранить аватар
+            else:
+                logger.info("No VK avatar found in user data")
 
             logger.info(f"Attempting to authenticate/register user with data: {auth_data}")
             
             # Регистрируем или авторизуем пользователя
             async with httpx.AsyncClient() as client:
                 # Проверяем существование пользователя
+                logger.info(f"Checking if user exists with email: {auth_data['email']}")
                 check_response = await client.post(
                     f"{AUTH_SERVICE_URL}/auth/check-email",
                     json={"email": auth_data["email"]}
@@ -2708,14 +2721,20 @@ async def vk_callback(
                     # Если есть аватар, обновляем профиль пользователя
                     if avatar_url:
                         try:
+                            logger.info(f"Updating user avatar with URL: {avatar_url}")
                             user_id = register_response.json()["id"]
-                            await client.post(
+                            avatar_response = await client.post(
                                 f"{USER_SERVICE_URL}/user/avatar/vk",
                                 json={"user_id": user_id, "avatar_url": avatar_url}
                             )
-                            logger.info("User avatar updated successfully")
+                            if avatar_response.status_code == 200:
+                                logger.info("User avatar updated successfully")
+                            else:
+                                logger.error(f"Failed to update user avatar. Status: {avatar_response.status_code}, Response: {avatar_response.text}")
                         except Exception as e:
                             logger.error(f"Failed to update user avatar: {str(e)}")
+                    else:
+                        logger.info("No avatar URL available to update user profile")
                     
                     # После успешной регистрации подтверждаем email
                     logger.info("Verifying email after VK registration")
