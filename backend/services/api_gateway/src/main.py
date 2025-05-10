@@ -2618,7 +2618,32 @@ async def vk_callback(
             # Если есть email от VK, используем его
             if "email" in token_data:
                 auth_data["email"] = token_data["email"]
-            
+
+            # Если есть фото от VK, сохраняем его
+            avatar_url = None
+            if "photo_200" in user_data:
+                try:
+                    # Скачиваем фото из VK
+                    photo_response = await client.get(user_data["photo_200"])
+                    if photo_response.status_code == 200:
+                        # Создаем временный файл с фото
+                        photo_content = photo_response.content
+                        photo_filename = f"vk_avatar_{user_id}.jpg"
+                        
+                        # Загружаем фото через file_service
+                        files = {"file": (photo_filename, photo_content, "image/jpeg")}
+                        upload_response = await client.post(
+                            f"{FILE_SERVICE_URL}/upload",
+                            files=files
+                        )
+                        
+                        if upload_response.status_code == 200:
+                            file_data = upload_response.json()
+                            avatar_url = file_data["url"]
+                except Exception as e:
+                    logger.error(f"Failed to save VK avatar: {str(e)}")
+                    # Не прерываем регистрацию, если не удалось сохранить аватар
+
             logger.info(f"Attempting to authenticate/register user with data: {auth_data}")
             
             # Регистрируем или авторизуем пользователя
@@ -2679,6 +2704,23 @@ async def vk_callback(
                         )
                     
                     logger.info("User successfully registered")
+                    
+                    # Если есть аватар, обновляем профиль пользователя
+                    if avatar_url:
+                        try:
+                            user_id = register_response.json()["id"]
+                            profile_update = {
+                                "user_id": user_id,
+                                "avatar": avatar_url
+                            }
+                            
+                            await client.patch(
+                                f"{USER_SERVICE_URL}/user/profile/{user_id}",
+                                json=profile_update
+                            )
+                            logger.info("User avatar updated successfully")
+                        except Exception as e:
+                            logger.error(f"Failed to update user avatar: {str(e)}")
                     
                     # После успешной регистрации подтверждаем email
                     logger.info("Verifying email after VK registration")
