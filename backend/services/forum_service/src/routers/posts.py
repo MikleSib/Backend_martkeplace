@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import List, Optional
 import os
+import logging
+from colorama import Fore, Style, init
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
 import httpx
@@ -17,6 +19,33 @@ from src.utils.auth import User, get_current_user
 from src.utils.dependencies import (check_post_owner_or_moderator, get_post_or_404,
                                  get_topic_or_404)
 from src.utils.pagination import paginate
+
+# Инициализация colorama
+init()
+
+# Настройка логгера
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Создаем форматтер с цветами
+class ColoredFormatter(logging.Formatter):
+    def format(self, record):
+        if record.levelno >= logging.ERROR:
+            color = Fore.RED
+        elif record.levelno >= logging.WARNING:
+            color = Fore.YELLOW
+        elif record.levelno >= logging.INFO:
+            color = Fore.GREEN
+        else:
+            color = Fore.WHITE
+            
+        record.msg = f"{color}{record.msg}{Style.RESET_ALL}"
+        return super().format(record)
+
+# Создаем хендлер и добавляем форматтер
+handler = logging.StreamHandler()
+handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -188,8 +217,8 @@ async def get_posts(
                                 role=user_data.get("role", "user")
                             )
         except httpx.RequestError as e:
-            # Логируем ошибку, но продолжаем работу
-            print(f"Ошибка при получении данных пользователей: {str(e)}")
+            # Логируем ошибку с цветом
+            logger.error(f"Ошибка при получении данных пользователей: {str(e)}")
     
     # Объединяем данные сообщений с данными пользователей
     enhanced_posts = []
@@ -199,15 +228,18 @@ async def get_posts(
         # Добавляем данные о пользователе, если доступны
         if post.author_id in users_by_id:
             post_dict["user"] = users_by_id[post.author_id]
+            logger.info(f"Добавлены данные пользователя для поста {post.id}")
+        else:
+            logger.warning(f"Не найдены данные пользователя для поста {post.id}")
         
         # Загружаем изображения для поста
         images_query = select(Image).where(Image.post_id == post.id)
         images_result = await db.execute(images_query)
         images = images_result.scalars().all()
-        print(f"Загружено {len(images)} изображений для поста {post.id}")
+        logger.info(f"Загружено {len(images)} изображений для поста {post.id}")
         if images:
             for img in images:
-                print(f"  - Изображение: ID {img.id}, URL: {img.image_url}")
+                logger.debug(f"Изображение: ID {img.id}, URL: {img.image_url}")
         
         # Преобразуем ORM объекты в словари для правильной сериализации
         image_dicts = []
