@@ -2642,25 +2642,28 @@ async def vk_callback(
                     )
                     
                     if register_response.status_code == 400 and "почтой уже существует" in register_response.text:
-                        # Если пользователь существует, пробуем авторизоваться
-                        logger.info("User exists but registration failed, attempting to login")
-                        login_data = {
+                        # Если пользователь существует, генерируем токены напрямую
+                        logger.info("User exists, generating tokens directly")
+                        token_data = {
                             "email": auth_data["email"],
-                            "password": auth_data["password"]
+                            "user_id": user_id,
+                            "is_admin": False,
+                            "is_email_verified": True
                         }
-                        login_response = await client.post(
-                            f"{AUTH_SERVICE_URL}/auth/login",
-                            json=login_data
+                        
+                        # Генерируем токены через auth_service
+                        token_response = await client.post(
+                            f"{AUTH_SERVICE_URL}/auth/generate-tokens",
+                            json=token_data
                         )
                         
-                        if login_response.status_code == 200:
-                            logger.info("User successfully logged in")
-                            return login_response.json()
+                        if token_response.status_code == 200:
+                            logger.info("Tokens generated successfully")
+                            return token_response.json()
                         else:
-                            # Если не удалось войти, возвращаем ошибку регистрации
                             raise HTTPException(
                                 status_code=400,
-                                detail="Не удалось авторизовать существующего пользователя"
+                                detail="Не удалось сгенерировать токены для существующего пользователя"
                             )
                     
                     if register_response.status_code != 200:
@@ -2739,20 +2742,29 @@ async def vk_callback(
                     
                 except HTTPException as e:
                     if "почтой уже существует" in str(e.detail):
-                        # Если пользователь существует, пробуем авторизоваться
-                        logger.info("User exists but registration failed, attempting to login")
-                        login_data = {
+                        # Если пользователь существует, генерируем токены напрямую
+                        logger.info("User exists, generating tokens directly")
+                        token_data = {
                             "email": auth_data["email"],
-                            "password": auth_data["password"]
+                            "user_id": user_id,
+                            "is_admin": False,
+                            "is_email_verified": True
                         }
-                        login_response = await client.post(
-                            f"{AUTH_SERVICE_URL}/auth/login",
-                            json=login_data
+                        
+                        # Генерируем токены через auth_service
+                        token_response = await client.post(
+                            f"{AUTH_SERVICE_URL}/auth/generate-tokens",
+                            json=token_data
                         )
                         
-                        if login_response.status_code == 200:
-                            logger.info("User successfully logged in")
-                            return login_response.json()
+                        if token_response.status_code == 200:
+                            logger.info("Tokens generated successfully")
+                            return token_response.json()
+                        else:
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Не удалось сгенерировать токены для существующего пользователя"
+                            )
                     
                     raise e
                 
