@@ -209,3 +209,22 @@ async def get_my_profile(user_id: int, db: AsyncSession = Depends(get_db)):
     if not profile:
         raise HTTPException(status_code=404, detail="Профиль не найден")
     return profile
+
+@router.post("/user/avatar/vk", response_model=ProfileResponse)
+async def update_vk_avatar(user_id: int, avatar_url: str, db: AsyncSession = Depends(get_db)):
+    """Обновляет аватар пользователя при VK авторизации без проверки JWT токена"""
+    try:
+        profile = await get_user_profile(db, user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Профиль не найден")
+        
+        profile.avatar = avatar_url
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

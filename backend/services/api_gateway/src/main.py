@@ -2709,14 +2709,9 @@ async def vk_callback(
                     if avatar_url:
                         try:
                             user_id = register_response.json()["id"]
-                            profile_update = {
-                                "user_id": user_id,
-                                "avatar": avatar_url
-                            }
-                            
-                            await client.patch(
-                                f"{USER_SERVICE_URL}/user/profile/{user_id}",
-                                json=profile_update
+                            await client.post(
+                                f"{USER_SERVICE_URL}/user/avatar/vk",
+                                json={"user_id": user_id, "avatar_url": avatar_url}
                             )
                             logger.info("User avatar updated successfully")
                         except Exception as e:
