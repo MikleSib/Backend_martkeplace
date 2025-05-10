@@ -2647,8 +2647,6 @@ async def vk_callback(
                         token_data = {
                             "email": auth_data["email"],
                             "user_id": user_id,
-                            "is_admin": False,
-                            "is_email_verified": True
                         }
                         
                         # Генерируем токены через auth_service

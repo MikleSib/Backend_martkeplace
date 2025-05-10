@@ -11,3 +11,10 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+class VKAuth(BaseModel):
+    vk_id: int
+    email: str
+    first_name: str
+    last_name: str
+    photo_url: Optional[str] = None

@@ -21,6 +21,10 @@ class ChangePassword(BaseModel):
     old_password: str
     new_password: str
 
+class TokenGenerationData(BaseModel):
+    email: str
+    user_id: int
+
 @router.post("/auth/register")
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     # Приводим email к нижнему регистру
@@ -271,3 +275,47 @@ async def check_email(email: str, db: AsyncSession = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка при проверке email: {str(e)}")
+
+@router.post("/auth/generate-tokens")
+async def generate_tokens(token_data: TokenGenerationData, db: AsyncSession = Depends(get_db)):
+    """
+    Генерирует токены для существующего пользователя (используется для социальной авторизации)
+    """
+    try:
+        # Приводим email к нижнему регистру
+        email = token_data.email.lower()
+        
+        # Находим пользователя по email
+        user = await get_user_by_email(db, email)
+        if not user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        
+        # Создаем токены
+        access_token = create_access_token({
+            "sub": user.username,
+            "email": user.email,
+            "id": user.id,
+            "is_admin": user.is_admin
+        })
+        
+        refresh_token = create_refresh_token({
+            "sub": user.username,
+            "email": user.email,
+            "id": user.id,
+            "is_admin": user.is_admin
+        })
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_admin": user.is_admin
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка генерации токенов: {str(e)}")
