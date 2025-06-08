@@ -93,19 +93,38 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
     if page > total_pages and total > 0:
         raise HTTPException(status_code=404, detail="Page not found")
     
-    # Кэшируем полученные посты
-    posts_data = [post.__dict__ for post in posts]
-    for i, post in enumerate(posts_data):
-        # Удаляем непреобразуемые в JSON атрибуты
-        if "_sa_instance_state" in post:
-            del post["_sa_instance_state"]
-        # Обрабатываем вложенные объекты
-        posts_data[i] = json.loads(json.dumps(post, default=lambda o: o.__dict__ if hasattr(o, "__dict__") else str(o)))
+    # Преобразуем посты в словари
+    posts_data = []
+    for post in posts:
+        post_dict = {
+            "id": post.id,
+            "title": post.title,
+            "content": post.content,
+            "author_id": post.author_id,
+            "created_at": post.created_at,
+            "updated_at": post.updated_at,
+            "images": [{"id": img.id, "image_url": img.image_url, "post_id": img.post_id, "created_at": img.created_at} for img in post.images],
+            "comments": [{"id": comment.id, "content": comment.content, "author_id": comment.author_id, "created_at": comment.created_at, "updated_at": comment.updated_at} for comment in post.comments],
+            "likes": [{"id": like.id, "user_id": like.user_id, "created_at": like.created_at} for like in post.likes]
+        }
+        
+        # Добавляем информацию об авторе
+        if hasattr(post, 'author_info') and post.author_info:
+            post_dict["author"] = post.author_info
+        else:
+            post_dict["author"] = {
+                "id": post.author_id,
+                "username": "[Удаленный пользователь]",
+                "full_name": "[Удаленный пользователь]",
+                "about_me": None
+            }
+            
+        posts_data.append(post_dict)
     
     await set_posts_in_cache(posts_data)
     
     return {
-        "items": posts,
+        "items": posts_data,
         "total": total,
         "page": page,
         "page_size": page_size,
