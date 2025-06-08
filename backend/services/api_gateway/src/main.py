@@ -22,6 +22,13 @@ import uuid
 import jwt
 import secrets
 import string
+from config.config import (
+    PostCreate, PostUpdate, PostResponse,
+    CommentCreate, CommentUpdate, CommentResponse,
+    LikeCreate, LikeResponse,
+    PostImageCreate, PostImageResponse,
+    PaginatedPostResponse
+)
 
 app = FastAPI(
     title="API Gateway",
