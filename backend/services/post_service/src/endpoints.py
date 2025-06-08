@@ -81,18 +81,11 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
     # Конвертируем page в skip
     skip = (page - 1) * page_size
     
-    # Пытаемся получить посты из кэша
-    cached_posts = await get_posts_from_cache()
-    if cached_posts:
-        # Если кэш найден, применяем пагинацию
-        end = min(skip + page_size, len(cached_posts))
-        return cached_posts[skip:end]
-    
-    # Если кэш не найден, получаем данные из БД
+    # Получаем данные из БД
     crud = PostCRUD(db)
-    posts = await crud.get_all_posts(skip=skip, limit=page_size)  # Получаем посты с учетом пагинации
+    posts = await crud.get_all_posts(skip=skip, limit=page_size)
     
-    # Кэшируем все посты
+    # Кэшируем полученные посты
     posts_data = [post.__dict__ for post in posts]
     for i, post in enumerate(posts_data):
         # Удаляем непреобразуемые в JSON атрибуты
