@@ -96,6 +96,24 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
     # Преобразуем посты в словари
     posts_data = []
     for post in posts:
+        # Получаем информацию о пользователях для лайков
+        likes_data = []
+        for like in post.likes:
+            user_info = await crud.get_user_info(like.user_id)
+            like_dict = {
+                "id": like.id,
+                "user_id": like.user_id,
+                "post_id": post.id,
+                "created_at": like.created_at,
+                "user": user_info if user_info else {
+                    "id": like.user_id,
+                    "username": "[Удаленный пользователь]",
+                    "full_name": "[Удаленный пользователь]",
+                    "about_me": None
+                }
+            }
+            likes_data.append(like_dict)
+
         post_dict = {
             "id": post.id,
             "title": post.title,
@@ -105,7 +123,7 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
             "updated_at": post.updated_at,
             "images": [{"id": img.id, "image_url": img.image_url, "post_id": img.post_id, "created_at": img.created_at} for img in post.images],
             "comments": [{"id": comment.id, "content": comment.content, "author_id": comment.author_id, "created_at": comment.created_at, "updated_at": comment.updated_at} for comment in post.comments],
-            "likes": [{"id": like.id, "user_id": like.user_id, "created_at": like.created_at} for like in post.likes]
+            "likes": likes_data
         }
         
         # Добавляем информацию об авторе
