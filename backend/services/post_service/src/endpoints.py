@@ -114,6 +114,26 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
             }
             likes_data.append(like_dict)
 
+        # Получаем информацию об авторах комментариев
+        comments_data = []
+        for comment in post.comments:
+            author_info = await crud.get_user_info(comment.author_id)
+            comment_dict = {
+                "id": comment.id,
+                "content": comment.content,
+                "author_id": comment.author_id,
+                "post_id": post.id,
+                "created_at": comment.created_at,
+                "updated_at": comment.updated_at,
+                "author": author_info if author_info else {
+                    "id": comment.author_id,
+                    "username": "[Удаленный пользователь]",
+                    "full_name": "[Удаленный пользователь]",
+                    "about_me": None
+                }
+            }
+            comments_data.append(comment_dict)
+
         post_dict = {
             "id": post.id,
             "title": post.title,
@@ -122,7 +142,7 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
             "created_at": post.created_at,
             "updated_at": post.updated_at,
             "images": [{"id": img.id, "image_url": img.image_url, "post_id": img.post_id, "created_at": img.created_at} for img in post.images],
-            "comments": [{"id": comment.id, "content": comment.content, "author_id": comment.author_id, "created_at": comment.created_at, "updated_at": comment.updated_at} for comment in post.comments],
+            "comments": comments_data,
             "likes": likes_data
         }
         
