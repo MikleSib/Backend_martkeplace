@@ -76,14 +76,22 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Post not found")
     return post
 
-@router.get("/posts/", response_model=List[PostResponse])
+@router.get("/posts/", response_model=dict)
 async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = Depends(get_db)):
     # Конвертируем page в skip
     skip = (page - 1) * page_size
     
     # Получаем данные из БД
     crud = PostCRUD(db)
+    total = await crud.get_total_posts_count()
     posts = await crud.get_all_posts(skip=skip, limit=page_size)
+    
+    # Вычисляем общее количество страниц
+    total_pages = (total + page_size - 1) // page_size
+    
+    # Проверяем, существует ли запрашиваемая страница
+    if page > total_pages and total > 0:
+        raise HTTPException(status_code=404, detail="Page not found")
     
     # Кэшируем полученные посты
     posts_data = [post.__dict__ for post in posts]
@@ -96,7 +104,13 @@ async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = De
     
     await set_posts_in_cache(posts_data)
     
-    return posts
+    return {
+        "items": posts,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages
+    }
 
 @router.get("/users/{author_id}/posts/", response_model=List[PostResponse])
 async def get_user_posts(author_id: int, skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):

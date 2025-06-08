@@ -96,4 +96,14 @@ class PostResponse(PostBase):
     likes: List[LikeResponse] = []
 
     class Config:
+        from_attributes = True
+
+class PaginatedPostResponse(BaseModel):
+    items: List[PostResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+    class Config:
         from_attributes = True 

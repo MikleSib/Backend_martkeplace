@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional, Dict
 import requests
@@ -85,6 +85,10 @@ class PostCRUD:
                     like.user_info = user_info
                     
         return post
+
+    async def get_total_posts_count(self) -> int:
+        result = await self.session.execute(select(func.count(Post.id)))
+        return result.scalar_one()
 
     async def get_all_posts(self, skip: int = 0, limit: int = 100) -> List[Post]:
         result = await self.session.execute(

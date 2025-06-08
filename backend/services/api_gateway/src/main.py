@@ -559,92 +559,21 @@ async def get_post(post_id: int):
         logger.error(f"Error getting post {post_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/posts", response_model=list[PostResponse])
+@app.get("/posts", response_model=PaginatedPostResponse)
 async def get_all_posts(page: int = 1, page_size: int = 2):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        # Конвертируем page в skip
-        skip = (page - 1) * page_size
-        response = requests.get(f"{POST_SERVICE_URL}/posts?skip={skip}&limit={page_size}")
+        response = requests.get(f"{POST_SERVICE_URL}/posts?page={page}&page_size={page_size}")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Page not found")
         if response.status_code != 200:
             error_detail = response.json().get("detail", "Error getting posts")
             logger.error(f"Error from post service: {error_detail}")
             raise HTTPException(status_code=response.status_code, detail=error_detail)
             
-        posts = response.json()
-        
-        for post in posts:
-            if "author" not in post and "author_id" in post:
-                try:
-                    author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{post['author_id']}")
-                    if author_response.status_code == 200:
-                        post['author'] = author_response.json()
-                    else:
-                        logger.warning(f"Could not get author data for user ID {post['author_id']}")
-                        post['author'] = {
-                            "id": post['author_id'],
-                            "username": "[Удаленный пользователь]",
-                            "full_name": "[Удаленный пользователь]",
-                            "about_me": None
-                        }
-                except Exception as e:
-                    logger.error(f"Error fetching author for post {post.get('id')}: {str(e)}")
-                    post['author'] = {
-                        "id": post['author_id'],
-                        "username": "[Удаленный пользователь]",
-                        "full_name": "[Удаленный пользователь]",
-                        "about_me": None
-                    }
-            
-            if 'likes' in post and post['likes']:
-                for like in post['likes']:
-                    if 'user_id' in like and not 'user' in like:
-                        try:
-                            user_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{like['user_id']}")
-                            if user_response.status_code == 200:
-                                like['user'] = user_response.json()
-                            else:
-                                like['user'] = {
-                                    "id": like['user_id'],
-                                    "username": "[Удаленный пользователь]",
-                                    "full_name": "[Удаленный пользователь]",
-                                    "about_me": None
-                                }
-                        except Exception as e:
-                            logger.error(f"Error fetching user for like: {str(e)}")
-                            like['user'] = {
-                                "id": like['user_id'],
-                                "username": "[Удаленный пользователь]",
-                                "full_name": "[Удаленный пользователь]",
-                                "about_me": None
-                            }
-            
-            if 'comments' in post and post['comments']:
-                for comment in post['comments']:
-                    if 'author_id' in comment and not 'author' in comment:
-                        try:
-                            author_response = requests.get(f"{USER_SERVICE_URL}/user/profile/{comment['author_id']}")
-                            if author_response.status_code == 200:
-                                comment['author'] = author_response.json()
-                            else:
-                                comment['author'] = {
-                                    "id": comment['author_id'],
-                                    "username": "[Удаленный пользователь]",
-                                    "full_name": "[Удаленный пользователь]",
-                                    "about_me": None
-                                }
-                        except Exception as e:
-                            logger.error(f"Error fetching author for comment: {str(e)}")
-                            comment['author'] = {
-                                "id": comment['author_id'],
-                                "username": "[Удаленный пользователь]",
-                                "full_name": "[Удаленный пользователь]",
-                                "about_me": None
-                            }
-                
-        return posts
+        return response.json()
     except HTTPException as e:
         raise e
     except Exception as e:
