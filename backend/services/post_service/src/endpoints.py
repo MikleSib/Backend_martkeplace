@@ -77,7 +77,7 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
     return post
 
 @router.get("/posts/", response_model=List[PostResponse])
-async def get_all_posts(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def get_all_posts(skip: int = 0, limit: int = 2, db: AsyncSession = Depends(get_db)):
     # Пытаемся получить посты из кэша
     cached_posts = await get_posts_from_cache()
     if cached_posts:
