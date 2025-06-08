@@ -22,7 +22,7 @@ import uuid
 import jwt
 import secrets
 import string
-from config.config import (
+from src.config.config import (
     PostCreate, PostUpdate, PostResponse,
     CommentCreate, CommentUpdate, CommentResponse,
     LikeCreate, LikeResponse,
