@@ -560,12 +560,14 @@ async def get_post(post_id: int):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/posts", response_model=list[PostResponse])
-async def get_all_posts(skip: int = 0, limit: int = 2):
+async def get_all_posts(page: int = 1, page_size: int = 2):
     if not check_route_enabled(f"{POST_SERVICE_URL}/posts"):
         raise HTTPException(status_code=503, detail="Post service is not running")
     
     try:
-        response = requests.get(f"{POST_SERVICE_URL}/posts?skip={skip}&limit={limit}")
+        # Конвертируем page в skip
+        skip = (page - 1) * page_size
+        response = requests.get(f"{POST_SERVICE_URL}/posts?skip={skip}&limit={page_size}")
         if response.status_code != 200:
             error_detail = response.json().get("detail", "Error getting posts")
             logger.error(f"Error from post service: {error_detail}")

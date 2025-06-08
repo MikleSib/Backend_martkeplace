@@ -77,17 +77,20 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
     return post
 
 @router.get("/posts/", response_model=List[PostResponse])
-async def get_all_posts(skip: int = 0, limit: int = 2, db: AsyncSession = Depends(get_db)):
+async def get_all_posts(page: int = 1, page_size: int = 2, db: AsyncSession = Depends(get_db)):
+    # Конвертируем page в skip
+    skip = (page - 1) * page_size
+    
     # Пытаемся получить посты из кэша
     cached_posts = await get_posts_from_cache()
     if cached_posts:
         # Если кэш найден, применяем пагинацию
-        end = min(skip + limit, len(cached_posts))
+        end = min(skip + page_size, len(cached_posts))
         return cached_posts[skip:end]
     
     # Если кэш не найден, получаем данные из БД
     crud = PostCRUD(db)
-    posts = await crud.get_all_posts(skip=0, limit=1000)  # Получаем больше постов для кэширования
+    posts = await crud.get_all_posts(skip=skip, limit=page_size)  # Получаем посты с учетом пагинации
     
     # Кэшируем все посты
     posts_data = [post.__dict__ for post in posts]
@@ -100,9 +103,7 @@ async def get_all_posts(skip: int = 0, limit: int = 2, db: AsyncSession = Depend
     
     await set_posts_in_cache(posts_data)
     
-    # Возвращаем запрошенное подмножество постов
-    end = min(skip + limit, len(posts))
-    return posts[skip:end]
+    return posts
 
 @router.get("/users/{author_id}/posts/", response_model=List[PostResponse])
 async def get_user_posts(author_id: int, skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
