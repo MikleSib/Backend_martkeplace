@@ -28,7 +28,7 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-def optimize_image(image_data: bytes, max_dimension: int = 1920, quality: int = 60) -> bytes:
+def optimize_image(image_data: bytes, max_dimension: int = 1920, quality: int = 52) -> bytes:
     """Оптимизирует изображение: сохраняет пропорции, ограничивает максимальную сторону и конвертирует в WebP"""
     try:
         # Открываем изображение из байтов
