@@ -82,7 +82,7 @@ async def get_post(
                 
                 # Создаем полный объект информации о пользователе
                 user_info = UserInfo(
-                    id=post.author_id,
+                    id=user_data["user_id"],
                     username=user_data.get("username", "Неизвестный"),
                     fullname=user_data.get("full_name"),
                     avatar=user_data.get("avatar"),
@@ -121,7 +121,7 @@ async def get_post(
                         
                         # Создаем полный объект информации о пользователе цитируемого сообщения
                         quoted_post_user = UserInfo(
-                            id=quoted_post.author_id,
+                            id=quoted_user_data["user_id"],
                             username=quoted_user_data.get("username", "Неизвестный"),
                             fullname=quoted_user_data.get("full_name"),
                             avatar=quoted_user_data.get("avatar"),
@@ -192,8 +192,8 @@ async def get_posts(
                 if response.status_code == 200:
                     users_data = response.json()
                     for user_data in users_data:
-                        users_by_id[user_data["id"]] = UserInfo(
-                            id=user_data["id"],
+                        users_by_id[user_data["user_id"]] = UserInfo(
+                            id=user_data["user_id"],
                             username=user_data.get("username", "Неизвестный"),
                             fullname=user_data.get("full_name"),
                             avatar=user_data.get("avatar"),
@@ -207,8 +207,8 @@ async def get_posts(
                         user_response = await client.get(f"{settings.USER_SERVICE_URL}/users/{author_id}")
                         if user_response.status_code == 200:
                             user_data = user_response.json()
-                            users_by_id[author_id] = UserInfo(
-                                id=author_id,
+                            users_by_id[user_data["user_id"]] = UserInfo(
+                                id=user_data["user_id"],
                                 username=user_data.get("username", "Неизвестный"),
                                 fullname=user_data.get("full_name"),
                                 avatar=user_data.get("avatar"),
@@ -528,7 +528,7 @@ async def create_post(
                         result.quoted_author = quoted_user_data.get("username", "Неизвестный")
                         
                         result.quoted_post_user = UserInfo(
-                            id=quoted_post.author_id,
+                            id=quoted_user_data["user_id"],
                             username=quoted_user_data.get("username", "Неизвестный"),
                             fullname=quoted_user_data.get("full_name"),
                             avatar=quoted_user_data.get("avatar"),

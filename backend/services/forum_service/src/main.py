@@ -97,7 +97,7 @@ async def get_active_forum_topics(
                             logger.info(f"User service response for user {user_id}: {user_response.status_code}")
                             if user_response.status_code == 200:
                                 user = user_response.json()
-                                users_by_id[user["id"]] = user
+                                users_by_id[user["user_id"]] = user
                         except Exception as e:
                             logger.error(f"Ошибка при получении данных пользователя {user_id}: {str(e)}")
             except httpx.RequestError as e:

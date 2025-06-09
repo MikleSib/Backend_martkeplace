@@ -66,7 +66,7 @@ async def get_topics(
                         user_response = await client.get(f"{settings.USER_SERVICE_URL}/users/{user_id}")
                         if user_response.status_code == 200:
                             user = user_response.json()
-                            users_by_id[user["id"]] = user
+                            users_by_id[user["user_id"]] = user
                     except Exception:
                         pass
         except httpx.RequestError:
