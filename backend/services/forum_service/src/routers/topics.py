@@ -201,6 +201,33 @@ async def create_topic(
     await db.commit()
     await db.refresh(new_topic)
     
+    # Увеличиваем счетчик сообщений пользователя в user_service (за стартовое сообщение)
+    try:
+        async with httpx.AsyncClient() as client:
+            # Получаем текущие данные пользователя
+            user_response = await client.get(f"{settings.USER_SERVICE_URL}/users/{current_user.id}")
+            if user_response.status_code == 200:
+                user_data = user_response.json()
+                current_posts_count = user_data.get("posts_count", 0)
+                
+                # Обновляем счетчик сообщений
+                update_response = await client.patch(
+                    f"{settings.USER_SERVICE_URL}/user/profile/{current_user.id}",
+                    json={
+                        "user_id": current_user.id,
+                        "username": user_data.get("username"),
+                        "full_name": user_data.get("full_name"),
+                        "about_me": user_data.get("about_me"),
+                        "avatar": user_data.get("avatar"),
+                        "signature": user_data.get("signature"),
+                        "posts_count": current_posts_count + 1,
+                        "role": user_data.get("role", "user")
+                    }
+                )
+    except httpx.RequestError:
+        # Игнорируем ошибки получения данных пользователя
+        pass
+    
     # Формируем ответ
     result = dict(new_topic.__dict__)
     result["author_username"] = current_user.username
