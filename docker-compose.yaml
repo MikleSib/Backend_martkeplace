@@ -12,6 +12,7 @@ services:
       - admin_service
       - forum_service
       - marketplace_service
+      - gallery_service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -102,12 +103,32 @@ services:
       context: ./backend/services/marketplace_service
       dockerfile: Dockerfile
     ports:
-      - "8010:8010"
+      - "8011:8011"
     environment:
       DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db_marketplace:5432/db_marketplace
       FORCE_DB_RECREATE: ${FORCE_DB_RECREATE:-false}
     depends_on:
       db_marketplace:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  gallery_service:
+    build:
+      context: ./backend/services/gallery_service
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db_gallery:5432/db_gallery
+      AUTH_SERVICE_URL: http://auth_service:8001/api/v1
+      USER_SERVICE_URL: http://user_service:8002/api/v1
+      FILE_SERVICE_URL: http://file_service:8005/api/v1
+    depends_on:
+      db_gallery:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
@@ -248,6 +269,22 @@ services:
       timeout: 5s
       retries: 5
 
+  db_gallery:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: db_gallery
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5438:5432"
+    volumes:
+      - db_gallery_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d db_gallery"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   admin_service:
     build:
       context: ./backend/services/admin_service
@@ -294,3 +331,4 @@ volumes:
   db_news_data:
   db_forum_data:
   db_marketplace_data:
+  db_gallery_data:
