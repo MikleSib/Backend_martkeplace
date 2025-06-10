@@ -8,7 +8,7 @@ from typing import Optional
 security = HTTPBearer()
 
 # URL сервисов
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8002/api/v1")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8002")
 
 class User:
     """Класс для хранения данных пользователя"""
@@ -58,7 +58,7 @@ async def get_current_user(
         # Для получения дополнительных данных пользователя делаем запрос к user_service
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(f"{USER_SERVICE_URL}/users/{user_id}")
+                response = await client.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
                 
                 if response.status_code == 200:
                     user_data = response.json()

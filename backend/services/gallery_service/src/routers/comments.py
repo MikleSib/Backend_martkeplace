@@ -20,13 +20,13 @@ from src.utils.auth import User, get_current_user
 router = APIRouter(prefix="/galleries", tags=["comments"])
 
 # URL сервисов
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8002/api/v1")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8002")
 
 async def get_user_info(user_id: int) -> UserInfo:
     """Получение информации о пользователе из user_service"""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{USER_SERVICE_URL}/users/{user_id}")
+            response = await client.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
             if response.status_code == 200:
                 user_data = response.json()
                 return UserInfo(
@@ -47,23 +47,24 @@ async def get_users_batch(user_ids: List[int]) -> dict:
     users_by_id = {}
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{USER_SERVICE_URL}/users/batch",
-                json={"user_ids": user_ids}
-            )
-            if response.status_code == 200:
-                users_data = response.json()
-                for user_data in users_data:
-                    users_by_id[user_data["user_id"]] = UserInfo(
-                        id=user_data["user_id"],
-                        username=user_data.get("username", "Неизвестный"),
-                        fullname=user_data.get("full_name"),
-                        avatar=user_data.get("avatar"),
-                        registration_date=user_data.get("registration_date"),
-                        posts_count=user_data.get("posts_count", 0),
-                        role=user_data.get("role", "user")
-                    )
-    except httpx.RequestError:
+            # Как в forum_service - получаем пользователей по одному
+            for user_id in user_ids:
+                try:
+                    response = await client.get(f"{USER_SERVICE_URL}/user/profile/{user_id}")
+                    if response.status_code == 200:
+                        user_data = response.json()
+                        users_by_id[user_data["user_id"]] = UserInfo(
+                            id=user_data["user_id"],
+                            username=user_data.get("username", "Неизвестный"),
+                            fullname=user_data.get("full_name"),
+                            avatar=user_data.get("avatar"),
+                            registration_date=user_data.get("registration_date"),
+                            posts_count=user_data.get("posts_count", 0),
+                            role=user_data.get("role", "user")
+                        )
+                except httpx.RequestError:
+                    pass
+    except Exception:
         pass
     return users_by_id
 
