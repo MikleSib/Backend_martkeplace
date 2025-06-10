@@ -16,25 +16,26 @@ class User(BaseModel):
 security = HTTPBearer()
 
 # URL сервиса аутентификации
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:8000/api/v1")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:8001")
 
 async def verify_token(token: str) -> Optional[User]:
     """Проверка JWT токена через auth_service"""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{AUTH_SERVICE_URL}/auth/verify",
-                headers={"Authorization": f"Bearer {token}"}
+                f"{AUTH_SERVICE_URL}/auth/check_token",
+                params={"token": token}
             )
             
             if response.status_code == 200:
                 user_data = response.json()
-                return User(
-                    id=user_data["user_id"],
-                    username=user_data["username"],
-                    email=user_data["email"],
-                    role=user_data.get("role", "user")
-                )
+                if user_data.get("valid", False):
+                    return User(
+                        id=user_data["user_id"],
+                        username=user_data["username"],
+                        email=user_data["email"],
+                        role="admin" if user_data.get("is_admin", False) else "user"
+                    )
     except httpx.RequestError:
         pass
     

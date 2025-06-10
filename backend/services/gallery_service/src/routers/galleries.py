@@ -21,8 +21,8 @@ from src.utils.auth import User, get_current_user
 router = APIRouter(prefix="/galleries", tags=["galleries"])
 
 # URL сервисов
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8000/api/v1")
-FILE_SERVICE_URL = os.getenv("FILE_SERVICE_URL", "http://file_service:8000/api/v1")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user_service:8002/api/v1")
+FILE_SERVICE_URL = os.getenv("FILE_SERVICE_URL", "http://file_service:8005")
 
 async def get_user_info(user_id: int) -> Optional[UserInfo]:
     """Получение информации о пользователе из user_service"""
