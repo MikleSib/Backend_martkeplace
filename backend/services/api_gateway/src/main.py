@@ -63,7 +63,8 @@ FILE_SERVICE_URL = "http://file_service:8005"
 NEWS_SERVICE_URL = "http://news_service:8006"
 MAIL_SERVICE_URL = "http://mail_service:8008"
 FORUM_SERVICE_URL = "http://forum_service:8009"
-MARKETPLACE_SERVICE_URL = "http://marketplace_service:8010"
+MARKETPLACE_SERVICE_URL = "http://marketplace_service:8011"
+GALLERY_SERVICE_URL = "http://gallery_service:8010"
 
 SERVICE_URLS = {
     "auth": AUTH_SERVICE_URL,
@@ -74,7 +75,8 @@ SERVICE_URLS = {
     "news": NEWS_SERVICE_URL,
     "mail": MAIL_SERVICE_URL,
     "forum": FORUM_SERVICE_URL,
-    "marketplace": MARKETPLACE_SERVICE_URL
+    "marketplace": MARKETPLACE_SERVICE_URL,
+    "gallery": GALLERY_SERVICE_URL
 }
 
 def get_from_cache(key):
@@ -2351,6 +2353,337 @@ async def create_marketplace_product(
     except Exception as e:
         logger.error(f"Error creating marketplace product: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating marketplace product: {str(e)}")
+
+# ==================== ГАЛЕРЕИ ====================
+
+@app.get("/galleries", tags=["Галереи"])
+async def get_galleries(
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(12, ge=1, le=50, description="Размер страницы"),
+    author_id: Optional[int] = Query(None, description="ID автора для фильтрации")
+):
+    """Получение списка галерей с пагинацией"""
+    try:
+        params = {"page": page, "page_size": page_size}
+        if author_id:
+            params["author_id"] = author_id
+            
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries",
+                params=params
+            )
+            
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при получении галерей"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.get("/galleries/{gallery_id}", tags=["Галереи"])
+async def get_gallery_detail(gallery_id: int):
+    """Получение детальной информации о галерее"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}")
+            
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при получении галереи"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.post("/galleries", tags=["Галереи"])
+async def create_gallery(
+    gallery_data: dict,
+    user_id: int = Depends(verify_token)
+):
+    """Создание новой фотогалереи"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries",
+                json=gallery_data,
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 400:
+            raise HTTPException(status_code=400, detail=response.json().get("detail", "Неверные данные"))
+        elif response.status_code != 201:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при создании галереи"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.put("/galleries/{gallery_id}", tags=["Галереи"])
+async def update_gallery(
+    gallery_id: int,
+    gallery_data: dict,
+    user_id: int = Depends(verify_token)
+):
+    """Обновление галереи (только владельцем)"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}",
+                json=gallery_data,
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Недостаточно прав для редактирования галереи")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при обновлении галереи"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.delete("/galleries/{gallery_id}", tags=["Галереи"])
+async def delete_gallery(
+    gallery_id: int,
+    user_id: int = Depends(verify_token)
+):
+    """Удаление галереи (только владельцем)"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}",
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Недостаточно прав для удаления галереи")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 204:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при удалении галереи"))
+        
+        return {"message": "Галерея успешно удалена"}
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.post("/galleries/upload_image", tags=["Галереи"])
+async def upload_gallery_image(
+    file: UploadFile = File(...),
+    user_id: int = Depends(verify_token)
+):
+    """Загрузка изображения для галереи"""
+    try:
+        async with httpx.AsyncClient() as client:
+            files = {"file": (file.filename, file.file, file.content_type)}
+            response = await client.post(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/upload_image",
+                files=files,
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 400:
+            raise HTTPException(status_code=400, detail=response.json().get("detail", "Неверный файл"))
+        elif response.status_code == 413:
+            raise HTTPException(status_code=413, detail="Размер файла превышает 8MB")
+        elif response.status_code != 201:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при загрузке изображения"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+# ==================== КОММЕНТАРИИ К ГАЛЕРЕЯМ ====================
+
+@app.get("/galleries/{gallery_id}/comments", tags=["Галереи"])
+async def get_gallery_comments(
+    gallery_id: int,
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(20, ge=1, le=100, description="Размер страницы")
+):
+    """Получение комментариев к галерее"""
+    try:
+        params = {"page": page, "page_size": page_size}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/comments",
+                params=params
+            )
+            
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при получении комментариев"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.post("/galleries/{gallery_id}/comments", tags=["Галереи"])
+async def create_gallery_comment(
+    gallery_id: int,
+    comment_data: dict,
+    user_id: int = Depends(verify_token)
+):
+    """Создание комментария к галерее"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/comments",
+                json=comment_data,
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 201:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при создании комментария"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.put("/galleries/{gallery_id}/comments/{comment_id}", tags=["Галереи"])
+async def update_gallery_comment(
+    gallery_id: int,
+    comment_id: int,
+    comment_data: dict,
+    user_id: int = Depends(verify_token)
+):
+    """Обновление комментария (только автором)"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/comments/{comment_id}",
+                json=comment_data,
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Недостаточно прав для редактирования комментария")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Комментарий не найден")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при обновлении комментария"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.delete("/galleries/{gallery_id}/comments/{comment_id}", tags=["Галереи"])
+async def delete_gallery_comment(
+    gallery_id: int,
+    comment_id: int,
+    user_id: int = Depends(verify_token)
+):
+    """Удаление комментария (только автором)"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/comments/{comment_id}",
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Недостаточно прав для удаления комментария")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Комментарий не найден")
+        elif response.status_code != 204:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при удалении комментария"))
+        
+        return {"message": "Комментарий успешно удален"}
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+# ==================== РЕАКЦИИ К ГАЛЕРЕЯМ ====================
+
+@app.post("/galleries/{gallery_id}/like", tags=["Галереи"])
+async def like_gallery(
+    gallery_id: int,
+    user_id: int = Depends(verify_token)
+):
+    """Поставить лайк галерее"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/like",
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 400:
+            raise HTTPException(status_code=400, detail=response.json().get("detail", "Вы уже поставили лайк"))
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при постановке лайка"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.post("/galleries/{gallery_id}/dislike", tags=["Галереи"])
+async def dislike_gallery(
+    gallery_id: int,
+    user_id: int = Depends(verify_token)
+):
+    """Поставить дизлайк галерее"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/dislike",
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 400:
+            raise HTTPException(status_code=400, detail=response.json().get("detail", "Вы уже поставили дизлайк"))
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Галерея не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при постановке дизлайка"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+@app.delete("/galleries/{gallery_id}/reactions", tags=["Галереи"])
+async def remove_gallery_reaction(
+    gallery_id: int,
+    user_id: int = Depends(verify_token)
+):
+    """Удалить реакцию пользователя на галерею"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{GALLERY_SERVICE_URL}/api/v1/galleries/{gallery_id}/reactions",
+                headers={"Authorization": f"Bearer {user_id}"}
+            )
+            
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Реакция не найдена")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Ошибка при удалении реакции"))
+        
+        return response.json()
+    except httpx.RequestError as e:
+        logger.error(f"Request to gallery service failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Gallery service unavailable")
+
+# ==================== VK АВТОРИЗАЦИЯ ====================
 
 class VKUserData(BaseModel):
     id: int
