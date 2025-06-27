@@ -9,16 +9,17 @@ logger = logging.getLogger(__name__)
 async def send_post_notification(post_id: int, title: str, content: str, author_id: int):
     short_content = (content[:50] + "...") if len(content) > 50 else content
     url = f"https://рыболовный-форум.рф/post/{post_id}"
-    message = (
-        f"💬 *НОВЫЙ ПОСТ НА ФОРУМЕ* 💬\n\n"
-        f"*ID поста:* {post_id}\n"
-        f"*Автор ID:* {author_id}\n"
-        f"*Заголовок:* {title}\n"
-        f"*Содержание:*\n```
+    message = f"""💬 *НОВЫЙ ПОСТ НА ФОРУМЕ* 💬
+
+*ID поста:* {post_id}
+*Автор ID:* {author_id}
+*Заголовок:* {title}
+*Содержание:*
+```
 {short_content}
-```\n"
-        f"*Ссылка на пост:* {url}"
-    )
+```
+*Ссылка на пост:* {url}
+"""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
