@@ -42,7 +42,7 @@ async def send_telegram_notification(message: str, parse_mode: str = "Markdown")
         logger.error(f"Ошибка при отправке уведомления в Telegram: {str(e)}")
         return False
 
-async def send_user_registration_notification(username: str, user_id: int, email: str, forum_url: str) -> bool:
+async def send_user_registration_notification(username: str, user_id: int, email: str, forum_url: str = "https://рыболовный-форум.рф") -> bool:
     """Отправляет уведомление о регистрации нового пользователя"""
     message = f"""
 🎉 *НОВАЯ РЕГИСТРАЦИЯ* 🎉
@@ -62,7 +62,7 @@ async def send_topic_creation_notification(
     author_username: str, 
     author_id: int,
     content_preview: str,
-    forum_url: str
+    forum_url: str = "https://рыболовный-форум.рф"
 ) -> bool:
     """Отправляет уведомление о создании новой темы"""
     message = f"""
@@ -89,12 +89,15 @@ async def send_post_creation_notification(
     author_username: str,
     author_id: int,
     content_preview: str,
-    forum_url: str,
+    forum_url: str = "https://рыболовный-форум.рф",
     is_topic_starter: bool = False
 ) -> bool:
     """Отправляет уведомление о создании нового поста"""
+    print(f"DEBUG: send_post_creation_notification вызвана для поста {post_id}, is_topic_starter={is_topic_starter}")
+    
     if is_topic_starter:
         # Не отправляем уведомление для стартового поста, так как уже отправили для темы
+        print(f"DEBUG: Пропускаем уведомление для стартового поста {post_id}")
         return True
         
     message = f"""
@@ -111,7 +114,10 @@ async def send_post_creation_notification(
 
 *Ссылка на пост:* {forum_url}/topics/{topic_id}?post={post_id}
 """
-    return await send_telegram_notification(message)
+    print(f"DEBUG: Отправляем уведомление о посте {post_id}: {message[:100]}...")
+    result = await send_telegram_notification(message)
+    print(f"DEBUG: Результат отправки уведомления о посте {post_id}: {result}")
+    return result
 
 # Импортируем datetime для использования в функциях
 from datetime import datetime 

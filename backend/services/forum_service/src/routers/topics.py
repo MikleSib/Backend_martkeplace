@@ -239,7 +239,7 @@ async def create_topic(
             author_username=current_user.username,
             author_id=current_user.id,
             content_preview=content_preview,
-            forum_url=settings.FORUM_URL
+            forum_url="https://рыболовный-форум.рф"
         )
     except Exception as e:
         # Не прерываем создание темы, если не удалось отправить уведомление

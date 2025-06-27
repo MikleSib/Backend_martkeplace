@@ -44,7 +44,7 @@ async def send_telegram_notification(message: str, parse_mode: str = "Markdown")
 
 async def send_user_registration_notification(username: str, user_id: int, email: str) -> bool:
     """Отправляет уведомление о регистрации нового пользователя"""
-    forum_url = "http://localhost:8000/forum"  # Базовый URL форума
+    forum_url = "https://рыболовный-форум.рф"  # Базовый URL форума
     
     message = f"""
 🎉 *НОВАЯ РЕГИСТРАЦИЯ* 🎉

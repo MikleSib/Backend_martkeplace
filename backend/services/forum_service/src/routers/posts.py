@@ -578,20 +578,25 @@ async def create_post(
         topic = await db.scalar(topic_query)
         topic_title = topic.title if topic else "Неизвестная тема"
         
+        print(f"DEBUG: Создан пост ID {new_post.id}, is_topic_starter={new_post.is_topic_starter}")
+        
         content_preview = post_data.content[:100] + "..." if len(post_data.content) > 100 else post_data.content
-        await send_post_creation_notification(
+        result_notification = await send_post_creation_notification(
             post_id=new_post.id,
             topic_title=topic_title,
             topic_id=new_post.topic_id,
             author_username=current_user.username,
             author_id=current_user.id,
             content_preview=content_preview,
-            forum_url=settings.FORUM_URL,
+            forum_url="https://рыболовный-форум.рф",
             is_topic_starter=new_post.is_topic_starter
         )
+        print(f"DEBUG: Результат отправки уведомления о посте: {result_notification}")
     except Exception as e:
         # Не прерываем создание поста, если не удалось отправить уведомление
         print(f"Ошибка отправки уведомления о создании поста: {str(e)}")
+        import traceback
+        traceback.print_exc()
     
     return result
 
@@ -927,7 +932,7 @@ async def report_post(
 {content_preview}
 ```
 
-*Ссылка на сообщение:* {settings.FORUM_URL}/topics/{post.topic_id}?post={post_id}
+*Ссылка на сообщение:* https://рыболовный-форум.рф/topics/{post.topic_id}?post={post_id}
 """
         
         from src.utils.telegram_notifications import send_telegram_notification
