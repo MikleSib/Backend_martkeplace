@@ -80,7 +80,7 @@ async def send_topic_creation_notification(
 {short_content}
 ```
 
-*Ссылка на тему:* {forum_url}/forum/topics/{topic_id}
+*Ссылка на тему:* {forum_url}/forum/topic/{topic_id}
 """
     return await send_telegram_notification(message)
 
@@ -115,7 +115,7 @@ async def send_post_creation_notification(
 {short_content}
 ```
 
-*Ссылка на пост:* {forum_url}/forum/topics/{topic_id}?post={post_id}
+*Ссылка на пост:* {forum_url}/forum/topic/{topic_id}?post={post_id}
 """
     print(f"DEBUG: Отправляем уведомление о посте {post_id}: {message[:100]}...")
     result = await send_telegram_notification(message)
