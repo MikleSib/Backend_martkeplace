@@ -12,6 +12,7 @@ from config import (
 )
 import requests
 import json
+from src.utils.telegram_notifications import send_post_notification
 
 router = APIRouter()
 
@@ -64,6 +65,18 @@ async def create_post(post: PostCreate, db: AsyncSession = Depends(get_db)):
     )
     # Инвалидируем кэш при создании нового поста
     await invalidate_posts_cache()
+
+    # Отправляем уведомление в Telegram
+    try:
+        await send_post_notification(
+            post_id=new_post.id,
+            title=new_post.title,
+            content=new_post.content,
+            author_id=new_post.author_id
+        )
+    except Exception as e:
+        print(f"Ошибка отправки уведомления в Telegram: {str(e)}")
+
     return new_post
 
 @router.get("/posts/{post_id}", response_model=PostResponse)

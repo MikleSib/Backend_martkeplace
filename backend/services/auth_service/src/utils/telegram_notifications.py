@@ -53,6 +53,6 @@ async def send_user_registration_notification(username: str, user_id: int, email
 *Email:* {email}
 *Дата:* {datetime.now().strftime("%d.%m.%Y %H:%M")}
 
-*Профиль пользователя:* {forum_url}/user/{user_id}
+*Профиль пользователя:* {forum_url}/forum/user/{user_id}
 """
     return await send_telegram_notification(message) 

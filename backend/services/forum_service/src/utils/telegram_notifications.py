@@ -1,6 +1,7 @@
 import httpx
 from typing import Optional
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def send_user_registration_notification(username: str, user_id: int, email
 *Email:* {email}
 *Дата:* {datetime.now().strftime("%d.%m.%Y %H:%M")}
 
-*Профиль пользователя:* {forum_url}/user/{user_id}
+*Профиль пользователя:* {forum_url}/forum/user/{user_id}
 """
     return await send_telegram_notification(message)
 
@@ -65,6 +66,7 @@ async def send_topic_creation_notification(
     forum_url: str = "https://рыболовный-форум.рф"
 ) -> bool:
     """Отправляет уведомление о создании новой темы"""
+    short_content = (content_preview[:50] + ("..." if len(content_preview) > 50 else "")) if content_preview else ""
     message = f"""
 📝 *НОВАЯ ТЕМА НА ФОРУМЕ* 📝
 
@@ -75,10 +77,10 @@ async def send_topic_creation_notification(
 
 *Содержание:*
 ```
-{content_preview}
+{short_content}
 ```
 
-*Ссылка на тему:* {forum_url}/topics/{topic_id}
+*Ссылка на тему:* {forum_url}/forum/topics/{topic_id}
 """
     return await send_telegram_notification(message)
 
@@ -100,6 +102,7 @@ async def send_post_creation_notification(
         print(f"DEBUG: Пропускаем уведомление для стартового поста {post_id}")
         return True
         
+    short_content = (content_preview[:50] + ("..." if len(content_preview) > 50 else "")) if content_preview else ""
     message = f"""
 💬 *НОВЫЙ ПОСТ НА ФОРУМЕ* 💬
 
@@ -109,15 +112,14 @@ async def send_post_creation_notification(
 
 *Содержание:*
 ```
-{content_preview}
+{short_content}
 ```
 
-*Ссылка на пост:* {forum_url}/topics/{topic_id}?post={post_id}
+*Ссылка на пост:* {forum_url}/forum/topics/{topic_id}?post={post_id}
 """
     print(f"DEBUG: Отправляем уведомление о посте {post_id}: {message[:100]}...")
     result = await send_telegram_notification(message)
     print(f"DEBUG: Результат отправки уведомления о посте {post_id}: {result}")
     return result
 
-# Импортируем datetime для использования в функциях
-from datetime import datetime 
+# Импортируем datetime для использования в функциях 
