@@ -5,6 +5,7 @@ from database import get_db, get_user_by_email, get_user_by_username, create_use
 from config import UserRegister, UserLogin
 from jwt import create_access_token, create_refresh_token, verify_access_token, verify_refresh_token
 from src.utils.password import verify_password
+from src.utils.telegram_notifications import send_user_registration_notification
 import httpx
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -75,6 +76,17 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
                 if isinstance(e, HTTPException):
                     raise e
                 raise HTTPException(status_code=500, detail="Failed to create user profile")
+
+    # Отправляем уведомление в Telegram о новой регистрации
+    try:
+        await send_user_registration_notification(
+            username=user_data.username,
+            user_id=user.id,
+            email=user_data.email
+        )
+    except Exception as e:
+        # Не прерываем регистрацию, если не удалось отправить уведомление
+        print(f"Ошибка отправки уведомления о регистрации: {str(e)}")
 
     return {"id": user.id, "username": user.username, "email": user.email}
 

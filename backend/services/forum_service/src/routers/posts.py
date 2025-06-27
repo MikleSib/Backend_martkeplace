@@ -19,6 +19,7 @@ from src.utils.auth import User, get_current_user
 from src.utils.dependencies import (check_post_owner_or_moderator, get_post_or_404,
                                  get_topic_or_404)
 from src.utils.pagination import paginate
+from src.utils.telegram_notifications import send_post_creation_notification
 
 # Инициализация colorama
 init()
@@ -570,6 +571,28 @@ async def create_post(
             except httpx.RequestError:
                 result.quoted_author = "Неизвестный"
     
+    # Отправляем уведомление в Telegram о создании нового поста
+    try:
+        # Получаем информацию о теме для уведомления
+        topic_query = select(Topic).where(Topic.id == new_post.topic_id)
+        topic = await db.scalar(topic_query)
+        topic_title = topic.title if topic else "Неизвестная тема"
+        
+        content_preview = post_data.content[:100] + "..." if len(post_data.content) > 100 else post_data.content
+        await send_post_creation_notification(
+            post_id=new_post.id,
+            topic_title=topic_title,
+            topic_id=new_post.topic_id,
+            author_username=current_user.username,
+            author_id=current_user.id,
+            content_preview=content_preview,
+            forum_url=settings.FORUM_URL,
+            is_topic_starter=new_post.is_topic_starter
+        )
+    except Exception as e:
+        # Не прерываем создание поста, если не удалось отправить уведомление
+        print(f"Ошибка отправки уведомления о создании поста: {str(e)}")
+    
     return result
 
 @router.put("/{post_id}", response_model=PostResponse)
@@ -886,9 +909,10 @@ async def report_post(
     
     reporter_username = reporter_info.get("username", current_user.username or f"Пользователь #{current_user.id}")
     
-    # Готовим сообщение для отправки в Telegram
-    content_preview = post.content[:100] + "..." if len(post.content) > 100 else post.content
-    message_text = f"""
+    # Отправляем уведомление в Telegram о жалобе
+    try:
+        content_preview = post.content[:100] + "..." if len(post.content) > 100 else post.content
+        message_text = f"""
 🚨 *НОВАЯ ЖАЛОБА НА СООБЩЕНИЕ* 🚨
 
 *Отправитель жалобы:* {reporter_username} (ID: {current_user.id})
@@ -905,25 +929,9 @@ async def report_post(
 
 *Ссылка на сообщение:* {settings.FORUM_URL}/topics/{post.topic_id}?post={post_id}
 """
-    
-    # Отправляем сообщение в Telegram
-    telegram_bot_token = "7668995111:AAFwYME1gQX6kd5kfsEKg4l0kYQt_iFQI-U"
-    chat_id = "-4744201336"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": message_text,
-                    "parse_mode": "Markdown"
-                }
-            )
-            telegram_result = response.json()
-            
-            if not telegram_result.get("ok", False):
-                print(f"Ошибка отправки в Telegram: {telegram_result}")
+        
+        from src.utils.telegram_notifications import send_telegram_notification
+        await send_telegram_notification(message_text)
     except Exception as e:
         print(f"Ошибка при отправке уведомления в Telegram: {str(e)}")
     

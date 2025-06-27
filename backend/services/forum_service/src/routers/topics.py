@@ -17,6 +17,7 @@ from src.utils.auth import User, get_current_user
 from src.utils.dependencies import (check_is_moderator, get_category_or_404,
                                  get_topic_or_404, check_topic_owner_or_moderator)
 from src.utils.pagination import paginate
+from src.utils.telegram_notifications import send_topic_creation_notification
 
 router = APIRouter(prefix="/topics", tags=["topics"])
 
@@ -227,6 +228,22 @@ async def create_topic(
     except httpx.RequestError:
         # Игнорируем ошибки получения данных пользователя
         pass
+    
+    # Отправляем уведомление в Telegram о создании новой темы
+    try:
+        content_preview = topic_data.content[:100] + "..." if len(topic_data.content) > 100 else topic_data.content
+        await send_topic_creation_notification(
+            topic_title=topic_data.title,
+            topic_id=new_topic.id,
+            category_title=category.title,
+            author_username=current_user.username,
+            author_id=current_user.id,
+            content_preview=content_preview,
+            forum_url=settings.FORUM_URL
+        )
+    except Exception as e:
+        # Не прерываем создание темы, если не удалось отправить уведомление
+        print(f"Ошибка отправки уведомления о создании темы: {str(e)}")
     
     # Формируем ответ
     result = dict(new_topic.__dict__)
